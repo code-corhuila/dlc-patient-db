@@ -12,3 +12,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/10_indexes/001_patients_document.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-indexes-002
+      author: DanielPerez1822
+      labels: "HU-PAT-001,emergency-contacts,ddl,indexes"
+      comment: "Index the local patient reference on the newly created contacts table."
+      changes:
+        - sqlFile:
+            path: 002_emergency_contacts_patient.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/002_emergency_contacts_patient.rollback.sql
+            relativeToChangelogFile: true

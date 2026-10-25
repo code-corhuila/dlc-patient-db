@@ -1,0 +1,1 @@
+ALTER TABLE patients.emergency_contacts DROP CONSTRAINT fk_emergency_contacts_patient;
