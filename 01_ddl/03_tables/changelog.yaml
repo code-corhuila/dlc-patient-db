@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-tables-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,PAT-001,ddl,tables"
+      comment: "Administrative patient identity; IAM actor UUIDs are contractual references."
+      changes:
+        - sqlFile:
+            path: 001_create_patients.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/001_create_patients.rollback.sql
+            relativeToChangelogFile: true

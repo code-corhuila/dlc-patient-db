@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-functions-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,PAT-001,ddl,functions"
+      comment: "Reject changes to the stable patient identifier."
+      changes:
+        - sqlFile:
+            path: 001_reject_patient_id_change.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/001_reject_patient_id_change.rollback.sql
+            relativeToChangelogFile: true
