@@ -12,3 +12,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/03_tables/001_create_patients.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-002
+      author: DanielPerez1822
+      labels: "HU-PAT-001,emergency-contacts,ddl,tables"
+      comment: "Zero or more administrative emergency contacts per patient."
+      changes:
+        - sqlFile:
+            path: 002_create_emergency_contacts.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/002_create_emergency_contacts.rollback.sql
+            relativeToChangelogFile: true
