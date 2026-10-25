@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-triggers-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,PAT-001,ddl,triggers"
+      comment: "Protect external patient references; unchanged identifiers remain valid."
+      changes:
+        - sqlFile:
+            path: 001_patients_identity_immutable.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/09_triggers/001_patients_identity_immutable.rollback.sql
+            relativeToChangelogFile: true
