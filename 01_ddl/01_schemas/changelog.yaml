@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-schema-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,ddl,schema,bootstrap"
+      comment: "Create only the Patients-owned schema; no business tables yet."
+      changes:
+        - sqlFile:
+            path: 001_create_schema_patients.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/01_schemas/001_create_schema_patients.rollback.sql
+            relativeToChangelogFile: true
