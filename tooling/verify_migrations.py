@@ -43,10 +43,17 @@ class MigrationRebuildTest(unittest.TestCase):
         def sql(statement):
             return run(*psql, statement)
 
-        def identity_checks():
+        support = (ROOT / "tooling/tests/support.sql").read_text()
+
+        def sql_script(script):
             run("docker", "exec", "-i", container, "psql", "-U", "postgres",
                 "-d", env["PG_DATABASE"], "-v", "ON_ERROR_STOP=1",
-                input_text=(ROOT / "tooling/tests/patient_identity.sql").read_text())
+                input_text=script)
+
+        def storage_checks():
+            for name in ("patient_identity", "emergency_contacts"):
+                print("Storage checks: " + name, flush=True)
+                sql_script("BEGIN;\n" + support + (ROOT / f"tooling/tests/{name}.sql").read_text())
 
         def concurrent_identity_check():
             def insert(n, kind, number):
@@ -110,11 +117,32 @@ class MigrationRebuildTest(unittest.TestCase):
             migrate("update-count", "--count=1")
             history = "public.databasechangelog_patients"
             bootstrap = sql(f"SELECT id, md5sum, dateexecuted FROM {history}")
+            migrate("update", "--label-filter=!emergency-contacts")
+            self.assertEqual(sql("SELECT to_regclass('patients.emergency_contacts') IS NULL"), "t")
+            baseline_count = int(sql(f"SELECT count(*) FROM {history}"))
+            prior_history_query = (f"SELECT id, md5sum, dateexecuted FROM {history} "
+                                   f"WHERE orderexecuted <= {baseline_count} ORDER BY orderexecuted")
+            prior_history = sql(prior_history_query)
+            sql_script(support + "SELECT pg_temp.register_patient(90, 'CC', 'CONTACTS-UPGRADE');")
+            patient_query = ("SELECT row_to_json(p)::text FROM patients.patients p "
+                             "WHERE patient_id = '00000000-0000-4000-8000-000000000090'")
+            prior_patient = sql(patient_query)
             migrate("update")
+            self.assertEqual(sql(patient_query), prior_patient)
+            increment_count = int(sql(f"SELECT count(*) FROM {history}")) - baseline_count
+            self.assertGreater(increment_count, 0)
+            migrate("rollback-count", "--count=" + str(increment_count))
+            self.assertEqual(sql("SELECT to_regclass('patients.emergency_contacts') IS NULL"), "t")
+            self.assertEqual(sql(patient_query), prior_patient)
+            migrate("update")
+            self.assertEqual(sql(patient_query), prior_patient)
+            self.assertEqual(sql(prior_history_query), prior_history)
+            sql("DELETE FROM patients.patients WHERE "
+                "patient_id = '00000000-0000-4000-8000-000000000090'")
             self.assertEqual(schema_count(), "1")
             self.assertEqual(sql(f"SELECT id, md5sum, dateexecuted FROM {history} "
                                  "WHERE id = 'patients-ddl-schema-001'"), bootstrap)
-            identity_checks()
+            storage_checks()
             concurrent_identity_check()
             recorded = sql(f"SELECT id, author, md5sum, dateexecuted "
                            f"FROM {history} ORDER BY orderexecuted")
@@ -129,7 +157,7 @@ class MigrationRebuildTest(unittest.TestCase):
             migrate("update")
             self.assertEqual(schema_count(), "1")
             self.assertEqual(sql(f"SELECT count(*) FROM {history}"), count)
-            identity_checks()
+            storage_checks()
             self.assertEqual(sql("SELECT id FROM bootstrap_probe.marker"), "1")
         finally:
             run("docker", "rm", "-fv", container, check=False)

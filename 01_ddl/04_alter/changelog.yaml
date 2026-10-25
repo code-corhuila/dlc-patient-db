@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-alter-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,emergency-contacts,ddl,foreign-keys"
+      comment: "Contacts reference only the local Patient aggregate; never cascade patient deletion."
+      changes:
+        - sqlFile:
+            path: 001_emergency_contacts_patient.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/001_emergency_contacts_patient.rollback.sql
+            relativeToChangelogFile: true
