@@ -7,9 +7,12 @@ ADR-007 (Liquibase), ADR-008 (domain-owned migrations), `06-data/` and
 
 ## Current scope
 
-Bootstrap only: creates the empty `patients` schema and verifies reconstruction.
-This does not implement or complete HU-PAT-001. Patient tables, constraints,
-audit, concurrency, idempotency, inbox/outbox, seeds and runtime grants are pending.
+Includes the bootstrap and administrative `patients.patients` identity table,
+contract field limits, immutable identifier and normalized document uniqueness
+across active/inactive profiles. See [data dictionary](data-dictionary.md).
+This is an increment of HU-PAT-001, not complete functional acceptance.
+Emergency contacts, dedicated audit, optimistic update orchestration, guarded
+deactivation, idempotency, inbox/outbox, seeds and runtime grants remain pending.
 No clinical history, credentials, appointment or financial data belongs here.
 
 ## Layout
@@ -46,7 +49,9 @@ python -B tooling/verify_migrations.py
 
 The test creates disposable PostgreSQL with synthetic credentials, validates Compose
 and Liquibase, applies migrations twice, checks unchanged history, reverses all
-recorded changes and reapplies them. A foreign-owner fixture must survive.
+recorded changes and reapplies them. It also upgrades from the delivered bootstrap,
+checks patient constraints and races two normalized identities using separate
+connections while the first insert is uncommitted. A foreign-owner fixture must survive.
 Only its uniquely named test container and network are removed.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
