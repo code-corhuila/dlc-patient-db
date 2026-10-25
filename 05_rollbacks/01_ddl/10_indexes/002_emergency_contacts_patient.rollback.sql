@@ -1,0 +1,1 @@
+DROP INDEX patients.idx_emergency_contacts_patient_id;
