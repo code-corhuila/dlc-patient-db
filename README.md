@@ -16,8 +16,10 @@ server time, field names and a required deactivation reason. See [data dictionar
 This is an increment of HU-PAT-001, not complete functional acceptance.
 Completed retry outcomes are stored by principal, operation, resource and UUID key,
 with an immutable request hash/response and at least seven days of retention.
+The local outbox stores patient lifecycle events and their publication metadata,
+with immutable facts and indexed pending batches.
 Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
-deactivation, HTTP replay handling, inbox/outbox, seeds and runtime grants remain pending.
+deactivation, HTTP replay handling, inbox, broker relay, seeds and runtime grants remain pending.
 No clinical history, credentials, appointment or financial data belongs here.
 
 ## Layout
@@ -52,6 +54,9 @@ Requires Python 3.12+ (standard library only) and a running Linux Docker engine.
 python -B tooling/verify_migrations.py
 ```
 
+For a focused empty-store/storage check, add `--schema-smoke`; this does not run
+historical upgrade or rollback verification. CI keeps the full default command.
+
 The test creates disposable PostgreSQL with synthetic credentials, validates Compose
 and Liquibase, applies migrations twice, checks unchanged history, reverses all
 recorded changes and reapplies them. It also upgrades from the delivered bootstrap,
@@ -66,6 +71,8 @@ back both profile and audit changes; API/outbox orchestration remains pending.
 Retry checks cover scope separation, concurrent keys, immutable results, retention
 and journal/profile rollback. Migration files are copied unchanged to a disposable
 Linux volume for verification; the production Compose runner retains its read-only bind mount.
+Outbox checks cover event identity, payload keys, publication transitions, local
+transaction rollback and disjoint row-lock claims; no broker delivery is claimed.
 A foreign-owner fixture must survive.
 Only its uniquely named test container, network and migration snapshot volume are removed.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
