@@ -1,0 +1,2 @@
+DROP INDEX patients.idx_outbox_events_pending;
+DROP INDEX patients.idx_outbox_events_aggregate_id;

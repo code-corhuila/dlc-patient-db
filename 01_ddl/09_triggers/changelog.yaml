@@ -38,3 +38,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/09_triggers/003_idempotency_records_protection.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-triggers-004
+      author: DanielPerez1822
+      labels: "HU-PAT-001,outbox,ddl,triggers"
+      comment: "Guard row mutations and statement-level truncation."
+      changes:
+        - sqlFile:
+            path: 004_outbox_events_protection.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/09_triggers/004_outbox_events_protection.rollback.sql
+            relativeToChangelogFile: true

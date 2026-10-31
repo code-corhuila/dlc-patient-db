@@ -5,12 +5,14 @@ import os
 from pathlib import Path
 import secrets
 import subprocess
+import sys
 import time
 import unittest
 import uuid
 
 
 ROOT = Path(__file__).resolve().parents[1]
+SCHEMA_SMOKE = False
 
 
 class MigrationRebuildTest(unittest.TestCase):
@@ -52,7 +54,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 input_text=script)
 
         def storage_checks():
-            for name in ("patient_identity", "emergency_contacts", "patient_audit", "idempotency_records"):
+            for name in ("patient_identity", "emergency_contacts", "patient_audit", "idempotency_records", "outbox_events"):
                 print("Storage checks: " + name, flush=True)
                 sql_script("BEGIN;\n" + support + (ROOT / f"tooling/tests/{name}.sql").read_text())
 
@@ -74,14 +76,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 "BEGIN; " + first_insert + "SELECT pg_sleep(8); COMMIT;"],
                 cwd=ROOT, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             try:
-                for _ in range(40):
-                    if sql("SELECT count(*) FROM pg_stat_activity WHERE "
-                           "application_name = 'patients-race' AND wait_event = 'PgSleep'") == "1":
-                        break
-                    self.assertIsNone(first.poll(), "First transaction ended before the race")
-                    time.sleep(0.1)
-                else:
-                    self.fail("First transaction did not reach its uncommitted insert")
+                wait_for_transaction(first)
                 second = run(*psql, second_insert,
                              check=False, return_result=True)
                 self.assertNotEqual(second.returncode, 0)
@@ -89,6 +84,34 @@ class MigrationRebuildTest(unittest.TestCase):
             finally:
                 _, error = first.communicate(timeout=30)
             self.assertEqual(first.returncode, 0, error)
+
+        def wait_for_transaction(first):
+            for _ in range(40):
+                if sql("SELECT count(*) FROM pg_stat_activity WHERE "
+                       "application_name = 'patients-race' AND wait_event = 'PgSleep'") == "1":
+                    return
+                self.assertIsNone(first.poll(), "First transaction ended before the race")
+                time.sleep(0.1)
+            self.fail("First transaction did not reach its held write or row lock")
+
+        def concurrent_outbox_claim_check():
+            sql("INSERT INTO patients.outbox_events (event_id,aggregate_id,event_type,occurred_at,payload,correlation_id,causation_id) "
+                "SELECT ('50000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid, "
+                "'00000000-0000-4000-8000-000000000010','PatientProfileUpdated',statement_timestamp(), "
+                "jsonb_build_object('patientId','00000000-0000-4000-8000-000000000010','changedFields',jsonb_build_array('phone'), "
+                "'updatedAt',statement_timestamp(),'updatedBy','10000000-0000-4000-8000-000000000001'), "
+                "'60000000-0000-4000-8000-000000000001','70000000-0000-4000-8000-000000000001' FROM (VALUES (10),(11)) s(n)")
+            claim = ("SELECT event_id FROM patients.outbox_events WHERE status='PENDING' AND next_retry_at<=clock_timestamp() "
+                     "ORDER BY next_retry_at,recorded_at,event_id LIMIT 1 FOR UPDATE SKIP LOCKED")
+            first = subprocess.Popen([*psql,"SET application_name='patients-race'; BEGIN; " + claim + "; SELECT pg_sleep(8); COMMIT;"],
+                cwd=ROOT,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            try:
+                wait_for_transaction(first)
+                self.assertEqual(sql(claim),'50000000-0000-4000-8000-000000000011')
+            finally:
+                output,error = first.communicate(timeout=30)
+            self.assertEqual(first.returncode,0,error)
+            self.assertIn('50000000-0000-4000-8000-000000000010',output)
 
         def concurrent_idempotency_check():
             statement = ("INSERT INTO patients.idempotency_records (actor_kind, actor_subject, operation, "
@@ -132,11 +155,19 @@ class MigrationRebuildTest(unittest.TestCase):
                 "CREATE TABLE bootstrap_probe.marker (id integer PRIMARY KEY); "
                 "INSERT INTO bootstrap_probe.marker VALUES (1)")
             migrate("validate")
+            if SCHEMA_SMOKE:
+                print("Schema smoke: empty-store migration and current storage checks", flush=True)
+                migrate("update")
+                storage_checks()
+                concurrent_identity_check()
+                concurrent_idempotency_check()
+                concurrent_outbox_claim_check()
+                return
             # Start from the already delivered bootstrap, preserving its history on upgrade.
             migrate("update-count", "--count=1")
             history = "public.databasechangelog_patients"
             bootstrap = sql(f"SELECT id, md5sum, dateexecuted FROM {history}")
-            migrate("update", "--label-filter=!emergency-contacts and !patient-audit and !idempotency")
+            migrate("update", "--label-filter=!emergency-contacts and !patient-audit and !idempotency and !outbox")
             self.assertEqual(sql("SELECT to_regclass('patients.emergency_contacts') IS NULL"), "t")
             baseline_count = int(sql(f"SELECT count(*) FROM {history}"))
             prior_history_query = (f"SELECT id, md5sum, dateexecuted FROM {history} "
@@ -146,14 +177,14 @@ class MigrationRebuildTest(unittest.TestCase):
             patient_query = ("SELECT row_to_json(p)::text FROM patients.patients p "
                              "WHERE patient_id = '00000000-0000-4000-8000-000000000090'")
             prior_patient = sql(patient_query)
-            migrate("update", "--label-filter=!patient-audit and !idempotency")
+            migrate("update", "--label-filter=!patient-audit and !idempotency and !outbox")
             self.assertEqual(sql(patient_query), prior_patient)
             increment_count = int(sql(f"SELECT count(*) FROM {history}")) - baseline_count
             self.assertGreater(increment_count, 0)
             migrate("rollback-count", "--count=" + str(increment_count))
             self.assertEqual(sql("SELECT to_regclass('patients.emergency_contacts') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
-            migrate("update", "--label-filter=!patient-audit and !idempotency")
+            migrate("update", "--label-filter=!patient-audit and !idempotency and !outbox")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(prior_history_query), prior_history)
             # Upgrade from the delivered contacts schema, then reverse only the audit increment.
@@ -168,7 +199,7 @@ class MigrationRebuildTest(unittest.TestCase):
                              "emergency_contact_id = '20000000-0000-4000-8000-000000000090'")
             prior_contact = sql(contact_query)
             self.assertEqual(sql("SELECT to_regclass('patients.patient_audit') IS NULL"), "t")
-            migrate("update", "--label-filter=!idempotency")
+            migrate("update", "--label-filter=!idempotency and !outbox")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
             audit_count = int(sql(f"SELECT count(*) FROM {history}")) - audit_baseline
@@ -177,7 +208,7 @@ class MigrationRebuildTest(unittest.TestCase):
             self.assertEqual(sql("SELECT to_regclass('patients.patient_audit') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
-            migrate("update", "--label-filter=!idempotency")
+            migrate("update", "--label-filter=!idempotency and !outbox")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
             self.assertEqual(sql(old_history_query), old_history)
@@ -185,15 +216,28 @@ class MigrationRebuildTest(unittest.TestCase):
             previous_query = (f"SELECT id, md5sum, dateexecuted FROM {history} "
                               f"WHERE orderexecuted <= {retry_baseline} ORDER BY orderexecuted")
             previous = sql(previous_query)
-            migrate("update")
+            migrate("update", "--label-filter=!outbox")
             retry_count = int(sql(f"SELECT count(*) FROM {history}")) - retry_baseline
             self.assertGreater(retry_count, 0)
             migrate("rollback-count", "--count=" + str(retry_count))
             self.assertEqual(sql("SELECT to_regclass('patients.idempotency_records') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
-            migrate("update")
+            migrate("update", "--label-filter=!outbox")
             self.assertEqual(sql(previous_query), previous)
+            outbox_baseline = int(sql(f"SELECT count(*) FROM {history}"))
+            baseline_query = (f"SELECT id,md5sum,dateexecuted FROM {history} "
+                              f"WHERE orderexecuted <= {outbox_baseline} ORDER BY orderexecuted")
+            baseline_history = sql(baseline_query)
+            migrate("update")
+            outbox_count = int(sql(f"SELECT count(*) FROM {history}")) - outbox_baseline
+            self.assertGreater(outbox_count, 0)
+            migrate("rollback-count", "--count=" + str(outbox_count))
+            self.assertEqual(sql("SELECT to_regclass('patients.outbox_events') IS NULL"), "t")
+            self.assertEqual(sql(patient_query), prior_patient)
+            self.assertEqual(sql(contact_query), prior_contact)
+            migrate("update")
+            self.assertEqual(sql(baseline_query), baseline_history)
             sql("DELETE FROM patients.emergency_contacts WHERE "
                 "emergency_contact_id = '20000000-0000-4000-8000-000000000090'")
             sql("DELETE FROM patients.patients WHERE "
@@ -204,6 +248,7 @@ class MigrationRebuildTest(unittest.TestCase):
             storage_checks()
             concurrent_identity_check()
             concurrent_idempotency_check()
+            concurrent_outbox_claim_check()
             recorded = sql(f"SELECT id, author, md5sum, dateexecuted "
                            f"FROM {history} ORDER BY orderexecuted")
             self.assertTrue(recorded, "No migration was recorded")
@@ -231,4 +276,7 @@ class MigrationRebuildTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    SCHEMA_SMOKE = "--schema-smoke" in sys.argv
+    if SCHEMA_SMOKE:
+        sys.argv.remove("--schema-smoke")
     unittest.main(verbosity=2)
