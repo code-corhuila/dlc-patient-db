@@ -51,3 +51,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/03_tables/004_create_idempotency_records.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-005
+      author: DanielPerez1822
+      labels: "HU-PAT-001,outbox,ddl,tables"
+      comment: "Immutable patient event facts with mutable publication metadata."
+      changes:
+        - sqlFile:
+            path: 005_create_outbox_events.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/005_create_outbox_events.rollback.sql
+            relativeToChangelogFile: true
