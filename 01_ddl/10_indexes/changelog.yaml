@@ -64,3 +64,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/10_indexes/005_outbox_events_publication.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-indexes-006
+      author: DanielPerez1822
+      labels: "inbox,ddl,indexes"
+      comment: "Assignment inbox indexes for durable consumer deduplication."
+      changes:
+        - sqlFile:
+            path: 006_inbox_events_processing.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/006_inbox_events_processing.rollback.sql
+            relativeToChangelogFile: true

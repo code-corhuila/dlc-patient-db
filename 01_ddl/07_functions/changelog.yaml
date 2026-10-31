@@ -55,3 +55,17 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/07_functions/004_protect_outbox_events.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-005
+      author: DanielPerez1822
+      labels: "inbox,ddl,functions"
+      comment: "Assignment inbox functions for durable consumer deduplication."
+      changes:
+        - sqlFile:
+            path: 005_protect_inbox_events.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/005_protect_inbox_events.rollback.sql
+            relativeToChangelogFile: true
