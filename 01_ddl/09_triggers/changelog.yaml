@@ -51,3 +51,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/09_triggers/004_outbox_events_protection.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-triggers-005
+      author: DanielPerez1822
+      labels: "inbox,ddl,triggers"
+      comment: "Assignment inbox triggers for durable consumer deduplication."
+      changes:
+        - sqlFile:
+            path: 005_inbox_events_protection.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/09_triggers/005_inbox_events_protection.rollback.sql
+            relativeToChangelogFile: true
