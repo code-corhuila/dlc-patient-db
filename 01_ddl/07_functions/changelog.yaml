@@ -13,3 +13,17 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/07_functions/001_reject_patient_id_change.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-002
+      author: DanielPerez1822
+      labels: "HU-PAT-001,patient-audit,ddl,functions"
+      comment: "Stamp audit inserts at the server and reject destructive DML."
+      changes:
+        - sqlFile:
+            path: 002_protect_patient_audit.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/002_protect_patient_audit.rollback.sql
+            relativeToChangelogFile: true

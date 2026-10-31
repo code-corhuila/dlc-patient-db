@@ -12,3 +12,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/09_triggers/001_patients_identity_immutable.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-triggers-002
+      author: DanielPerez1822
+      labels: "HU-PAT-001,patient-audit,ddl,triggers"
+      comment: "Protect audit rows and the statement-level TRUNCATE path."
+      changes:
+        - sqlFile:
+            path: 002_patient_audit_append_only.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/09_triggers/002_patient_audit_append_only.rollback.sql
+            relativeToChangelogFile: true

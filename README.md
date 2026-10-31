@@ -11,9 +11,10 @@ Includes the bootstrap and administrative `patients.patients` identity table,
 contract field limits, immutable identifier and normalized document uniqueness
 across active/inactive profiles. Emergency contacts support zero or more entries,
 contract field limits and an indexed local patient reference with restricted deletion.
-See [data dictionary](data-dictionary.md).
+Append-only administrative audit records include actor, action, profile version,
+server time, field names and a required deactivation reason. See [data dictionary](data-dictionary.md).
 This is an increment of HU-PAT-001, not complete functional acceptance.
-Dedicated audit, optimistic update orchestration, guarded
+Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
 deactivation, idempotency, inbox/outbox, seeds and runtime grants remain pending.
 No clinical history, credentials, appointment or financial data belongs here.
 
@@ -56,6 +57,10 @@ checks patient constraints and races two normalized identities using separate
 connections while the first insert is uncommitted. Contact checks cover orphan rejection,
 required fields, limits, cardinality and retention after deactivation. Upgrade and
 increment-only rollback must preserve an existing patient and prior migration history.
+Audit checks reject destructive writes, unsafe field metadata and missing deactivation
+reasons; audit-only rollback also preserves existing contacts and prior history.
+Local transaction checks verify that failed audit inserts or later failures roll
+back both profile and audit changes; API/outbox orchestration remains pending.
 A foreign-owner fixture must survive.
 Only its uniquely named test container and network are removed.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
