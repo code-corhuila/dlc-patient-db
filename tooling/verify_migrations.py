@@ -51,7 +51,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 input_text=script)
 
         def storage_checks():
-            for name in ("patient_identity", "emergency_contacts"):
+            for name in ("patient_identity", "emergency_contacts", "patient_audit"):
                 print("Storage checks: " + name, flush=True)
                 sql_script("BEGIN;\n" + support + (ROOT / f"tooling/tests/{name}.sql").read_text())
 
@@ -107,7 +107,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 "--health-retries", "30", "postgres:16.6-alpine")
             run("docker", "run", "--rm", "--network", network,
                 "postgres:16.6-alpine", "sh", "-ec",
-                f"for i in $(seq 1 30); do pg_isready -h {container} "
+                f"for i in $(seq 1 60); do pg_isready -q -t 1 -h {container} "
                 "-U postgres -d patients_ci && exit 0; sleep 1; done; exit 1")
             sql("CREATE SCHEMA bootstrap_probe; "
                 "CREATE TABLE bootstrap_probe.marker (id integer PRIMARY KEY); "
@@ -117,7 +117,7 @@ class MigrationRebuildTest(unittest.TestCase):
             migrate("update-count", "--count=1")
             history = "public.databasechangelog_patients"
             bootstrap = sql(f"SELECT id, md5sum, dateexecuted FROM {history}")
-            migrate("update", "--label-filter=!emergency-contacts")
+            migrate("update", "--label-filter=!emergency-contacts and !patient-audit")
             self.assertEqual(sql("SELECT to_regclass('patients.emergency_contacts') IS NULL"), "t")
             baseline_count = int(sql(f"SELECT count(*) FROM {history}"))
             prior_history_query = (f"SELECT id, md5sum, dateexecuted FROM {history} "
@@ -127,16 +127,43 @@ class MigrationRebuildTest(unittest.TestCase):
             patient_query = ("SELECT row_to_json(p)::text FROM patients.patients p "
                              "WHERE patient_id = '00000000-0000-4000-8000-000000000090'")
             prior_patient = sql(patient_query)
-            migrate("update")
+            migrate("update", "--label-filter=!patient-audit")
             self.assertEqual(sql(patient_query), prior_patient)
             increment_count = int(sql(f"SELECT count(*) FROM {history}")) - baseline_count
             self.assertGreater(increment_count, 0)
             migrate("rollback-count", "--count=" + str(increment_count))
             self.assertEqual(sql("SELECT to_regclass('patients.emergency_contacts') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
-            migrate("update")
+            migrate("update", "--label-filter=!patient-audit")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(prior_history_query), prior_history)
+            # Upgrade from the delivered contacts schema, then reverse only the audit increment.
+            audit_baseline = int(sql(f"SELECT count(*) FROM {history}"))
+            old_history_query = (f"SELECT id, md5sum, dateexecuted FROM {history} "
+                                 f"WHERE orderexecuted <= {audit_baseline} ORDER BY orderexecuted")
+            old_history = sql(old_history_query)
+            sql("INSERT INTO patients.emergency_contacts VALUES "
+                "('20000000-0000-4000-8000-000000000090', "
+                "'00000000-0000-4000-8000-000000000090', 'Synthetic Contact', 'Relative', '3000000000')")
+            contact_query = ("SELECT row_to_json(c)::text FROM patients.emergency_contacts c WHERE "
+                             "emergency_contact_id = '20000000-0000-4000-8000-000000000090'")
+            prior_contact = sql(contact_query)
+            self.assertEqual(sql("SELECT to_regclass('patients.patient_audit') IS NULL"), "t")
+            migrate("update")
+            self.assertEqual(sql(patient_query), prior_patient)
+            self.assertEqual(sql(contact_query), prior_contact)
+            audit_count = int(sql(f"SELECT count(*) FROM {history}")) - audit_baseline
+            self.assertGreater(audit_count, 0)
+            migrate("rollback-count", "--count=" + str(audit_count))
+            self.assertEqual(sql("SELECT to_regclass('patients.patient_audit') IS NULL"), "t")
+            self.assertEqual(sql(patient_query), prior_patient)
+            self.assertEqual(sql(contact_query), prior_contact)
+            migrate("update")
+            self.assertEqual(sql(patient_query), prior_patient)
+            self.assertEqual(sql(contact_query), prior_contact)
+            self.assertEqual(sql(old_history_query), old_history)
+            sql("DELETE FROM patients.emergency_contacts WHERE "
+                "emergency_contact_id = '20000000-0000-4000-8000-000000000090'")
             sql("DELETE FROM patients.patients WHERE "
                 "patient_id = '00000000-0000-4000-8000-000000000090'")
             self.assertEqual(schema_count(), "1")
@@ -159,6 +186,11 @@ class MigrationRebuildTest(unittest.TestCase):
             self.assertEqual(sql(f"SELECT count(*) FROM {history}"), count)
             storage_checks()
             self.assertEqual(sql("SELECT id FROM bootstrap_probe.marker"), "1")
+        except AssertionError:
+            diagnostics = run("docker", "logs", container, check=False, return_result=True)
+            print((diagnostics.stdout + diagnostics.stderr).replace(
+                env["PG_MIGRATION_PASSWORD"], "[REDACTED]"), flush=True)
+            raise
         finally:
             run("docker", "rm", "-fv", container, check=False)
             run("docker", "network", "rm", network, check=False)
