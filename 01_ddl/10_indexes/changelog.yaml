@@ -51,3 +51,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/10_indexes/004_idempotency_records_expiry.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-indexes-005
+      author: DanielPerez1822
+      labels: "HU-PAT-001,outbox,ddl,indexes"
+      comment: "Support pending batches and the local aggregate reference on a new table."
+      changes:
+        - sqlFile:
+            path: 005_outbox_events_publication.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/005_outbox_events_publication.rollback.sql
+            relativeToChangelogFile: true

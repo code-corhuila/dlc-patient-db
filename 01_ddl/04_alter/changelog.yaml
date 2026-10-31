@@ -25,3 +25,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/04_alter/002_patient_audit_patient.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-alter-003
+      author: DanielPerez1822
+      labels: "HU-PAT-001,outbox,ddl,foreign-keys"
+      comment: "Events retain their Patients-owned aggregate reference."
+      changes:
+        - sqlFile:
+            path: 003_outbox_events_patient.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/003_outbox_events_patient.rollback.sql
+            relativeToChangelogFile: true

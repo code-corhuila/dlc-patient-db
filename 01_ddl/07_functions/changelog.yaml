@@ -41,3 +41,17 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/07_functions/003_protect_idempotency_records.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-004
+      author: DanielPerez1822
+      labels: "HU-PAT-001,outbox,ddl,functions"
+      comment: "Keep event facts stable while recording publication outcomes."
+      changes:
+        - sqlFile:
+            path: 004_protect_outbox_events.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/004_protect_outbox_events.rollback.sql
+            relativeToChangelogFile: true
