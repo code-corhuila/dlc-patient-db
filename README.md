@@ -14,8 +14,10 @@ contract field limits and an indexed local patient reference with restricted del
 Append-only administrative audit records include actor, action, profile version,
 server time, field names and a required deactivation reason. See [data dictionary](data-dictionary.md).
 This is an increment of HU-PAT-001, not complete functional acceptance.
+Completed retry outcomes are stored by principal, operation, resource and UUID key,
+with an immutable request hash/response and at least seven days of retention.
 Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
-deactivation, idempotency, inbox/outbox, seeds and runtime grants remain pending.
+deactivation, HTTP replay handling, inbox/outbox, seeds and runtime grants remain pending.
 No clinical history, credentials, appointment or financial data belongs here.
 
 ## Layout
@@ -61,8 +63,11 @@ Audit checks reject destructive writes, unsafe field metadata and missing deacti
 reasons; audit-only rollback also preserves existing contacts and prior history.
 Local transaction checks verify that failed audit inserts or later failures roll
 back both profile and audit changes; API/outbox orchestration remains pending.
+Retry checks cover scope separation, concurrent keys, immutable results, retention
+and journal/profile rollback. Migration files are copied unchanged to a disposable
+Linux volume for verification; the production Compose runner retains its read-only bind mount.
 A foreign-owner fixture must survive.
-Only its uniquely named test container and network are removed.
+Only its uniquely named test container, network and migration snapshot volume are removed.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
 

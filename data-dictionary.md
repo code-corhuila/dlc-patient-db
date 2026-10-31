@@ -63,6 +63,35 @@ This is explicit audit storage, not automatic auditing of every profile write.
 The API must supply an authorized actor and write profile/audit/outbox atomically.
 Runtime grants and retention operations remain separate work; no purge is introduced.
 
+## Idempotency records — HU-PAT-001
+
+This storage mapping implements the scope/retention rules in
+[API design decisions](https://github.com/code-corhuila/dlc-docs/blob/main/07-api/design-decisions.md#idempotency-and-optimistic-updates).
+`patients.idempotency_records` stores completed outcomes, not pending guard intents.
+
+| Column | Type | Storage rule |
+|---|---|---|
+| actor_kind | text | STAFF or SERVICE, derived from the authenticated principal |
+| actor_subject | text | Canonical verified subject, nonblank, at most 255 characters |
+| operation | text | Canonical owner operation identifier, nonblank, at most 100 characters |
+| target_resource | text | Canonical resource scope, nonblank, at most 255 characters; creation uses the collection scope |
+| idempotency_key | uuid | Retry key; the primary key includes all four scope fields above |
+| request_hash | text | SHA-256 digest of the canonical request, 64 lowercase hexadecimal characters |
+| response_status / response_body | smallint / jsonb | Original status (200–599) and JSON object; no raw request body is stored |
+| response_location | text | Optional original Location; nonblank when supplied, without CR/LF |
+| created_at / expires_at | timestamptz | Server-stamped creation and finite expiry at least 168 hours later |
+
+Staff subjects use the canonical staff UUID string; service subjects use their verified
+service identity. The API must derive/canonicalize the complete scope, hash the same
+request representation on retries, and compare hashes before returning saved results
+or IDEMPOTENCY_CONFLICT. It must reauthenticate and reauthorize every retry.
+Saved response bodies may contain administrative PII and remain protected Patients data.
+Records cannot be updated or truncated; deletion is allowed only after expiry.
+The expiry index supports bounded cleanup, but this increment configures no purge job.
+The service must commit the result with its owning write/audit/outbox in one transaction;
+database transaction tests are not evidence that API orchestration is implemented.
+Expiration neither releases coordination guards nor removes permanent document uniqueness.
+
 ## Document equality
 
 Owner clarification approved on 2026-10-24: equality uses `upper(btrim(value))`

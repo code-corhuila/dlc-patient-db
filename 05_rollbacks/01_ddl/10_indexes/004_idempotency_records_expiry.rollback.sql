@@ -1,0 +1,1 @@
+DROP INDEX patients.idx_idempotency_records_expires_at;
