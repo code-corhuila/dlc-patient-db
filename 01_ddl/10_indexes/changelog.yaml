@@ -25,3 +25,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/10_indexes/002_emergency_contacts_patient.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-indexes-003
+      author: DanielPerez1822
+      labels: "HU-PAT-001,patient-audit,ddl,indexes"
+      comment: "Support local patient audit lookup on the newly created audit table."
+      changes:
+        - sqlFile:
+            path: 003_patient_audit_history.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/003_patient_audit_history.rollback.sql
+            relativeToChangelogFile: true
