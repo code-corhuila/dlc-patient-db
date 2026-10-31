@@ -1,0 +1,1 @@
+DROP INDEX patients.idx_patient_audit_patient_recorded_at;

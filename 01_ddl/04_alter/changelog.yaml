@@ -12,3 +12,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/04_alter/001_emergency_contacts_patient.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-alter-002
+      author: DanielPerez1822
+      labels: "HU-PAT-001,patient-audit,ddl,foreign-keys"
+      comment: "Preserve the audited patient; actor identity remains an IAM contract reference."
+      changes:
+        - sqlFile:
+            path: 002_patient_audit_patient.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/002_patient_audit_patient.rollback.sql
+            relativeToChangelogFile: true
