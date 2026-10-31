@@ -38,3 +38,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/10_indexes/003_patient_audit_history.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-indexes-004
+      author: DanielPerez1822
+      labels: "HU-PAT-001,idempotency,ddl,indexes"
+      comment: "Support bounded expiration lookup on the newly created request journal."
+      changes:
+        - sqlFile:
+            path: 004_idempotency_records_expiry.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/004_idempotency_records_expiry.rollback.sql
+            relativeToChangelogFile: true

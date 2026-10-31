@@ -25,3 +25,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/09_triggers/002_patient_audit_append_only.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-triggers-003
+      author: DanielPerez1822
+      labels: "HU-PAT-001,idempotency,ddl,triggers"
+      comment: "Protect replay identity, outcomes, timestamps and retention across DML paths."
+      changes:
+        - sqlFile:
+            path: 003_idempotency_records_protection.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/09_triggers/003_idempotency_records_protection.rollback.sql
+            relativeToChangelogFile: true
