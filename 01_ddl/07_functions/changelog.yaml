@@ -27,3 +27,17 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/07_functions/002_protect_patient_audit.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-003
+      author: DanielPerez1822
+      labels: "HU-PAT-001,idempotency,ddl,functions"
+      comment: "Keep original outcomes immutable and enforce the minimum retry retention."
+      changes:
+        - sqlFile:
+            path: 003_protect_idempotency_records.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/003_protect_idempotency_records.rollback.sql
+            relativeToChangelogFile: true
