@@ -23,8 +23,18 @@ SELECT pg_temp.expect_rejection('DELETE FROM patients.patient_audit',
                                 '23514', 'ck_patient_audit_append_only');
 SELECT pg_temp.expect_rejection('TRUNCATE patients.patient_audit',
                                 '23514', 'ck_patient_audit_append_only');
-SELECT pg_temp.expect_rejection('TRUNCATE patients.patients CASCADE',
-                                '23514', 'ck_patient_audit_append_only');
+-- Either retained child may reject the cascade first; do not depend on trigger order.
+DO $$ DECLARE blocked boolean := false; guard text;
+BEGIN
+    BEGIN
+        TRUNCATE patients.patients CASCADE;
+    EXCEPTION WHEN check_violation THEN
+        GET STACKED DIAGNOSTICS guard = CONSTRAINT_NAME;
+        IF guard NOT IN ('ck_patient_audit_append_only','ck_outbox_events_immutable') THEN RAISE; END IF;
+        blocked := true;
+    END;
+    IF NOT blocked THEN RAISE EXCEPTION 'Cascading truncation was accepted'; END IF;
+END; $$;
 DO $$
 DECLARE field text; sample record;
 BEGIN

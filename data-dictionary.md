@@ -63,6 +63,62 @@ This is explicit audit storage, not automatic auditing of every profile write.
 The API must supply an authorized actor and write profile/audit/outbox atomically.
 Runtime grants and retention operations remain separate work; no purge is introduced.
 
+## Idempotency records — HU-PAT-001
+
+This storage mapping implements the scope/retention rules in
+[API design decisions](https://github.com/code-corhuila/dlc-docs/blob/main/07-api/design-decisions.md#idempotency-and-optimistic-updates).
+`patients.idempotency_records` stores completed outcomes, not pending guard intents.
+
+| Column | Type | Storage rule |
+|---|---|---|
+| actor_kind | text | STAFF or SERVICE, derived from the authenticated principal |
+| actor_subject | text | Canonical verified subject, nonblank, at most 255 characters |
+| operation | text | Canonical owner operation identifier, nonblank, at most 100 characters |
+| target_resource | text | Canonical resource scope, nonblank, at most 255 characters; creation uses the collection scope |
+| idempotency_key | uuid | Retry key; the primary key includes all four scope fields above |
+| request_hash | text | SHA-256 digest of the canonical request, 64 lowercase hexadecimal characters |
+| response_status / response_body | smallint / jsonb | Original status (200–599) and JSON object; no raw request body is stored |
+| response_location | text | Optional original Location; nonblank when supplied, without CR/LF |
+| created_at / expires_at | timestamptz | Server-stamped creation and finite expiry at least 168 hours later |
+
+Staff subjects use the canonical staff UUID string; service subjects use their verified
+service identity. The API must derive/canonicalize the complete scope, hash the same
+request representation on retries, and compare hashes before returning saved results
+or IDEMPOTENCY_CONFLICT. It must reauthenticate and reauthorize every retry.
+Saved response bodies may contain administrative PII and remain protected Patients data.
+Records cannot be updated or truncated; deletion is allowed only after expiry.
+The expiry index supports bounded cleanup, but this increment configures no purge job.
+The service must commit the result with its owning write/audit/outbox in one transaction;
+database transaction tests are not evidence that API orchestration is implemented.
+Expiration neither releases coordination guards nor removes permanent document uniqueness.
+
+## Outbox events — HU-PAT-001
+
+`patients.outbox_events` maps the [Patients event contracts](https://github.com/code-corhuila/dlc-docs/blob/main/09-microservices/services/03-patients-service/events.md).
+
+| Columns | Storage rule |
+|---|---|
+| event_id | Immutable UUID primary key, reused on every delivery attempt |
+| aggregate_id / aggregate_type | Required local patient UUID reference, ON UPDATE/DELETE RESTRICT; type is Patient |
+| event_type / event_version / producer | PatientRegistered, PatientProfileUpdated or PatientDeactivated; schema version 1; patients-service |
+| occurred_at / recorded_at | Finite fact instant and server-stamped recording instant, both timestamptz |
+| payload | Required JSON object, matching patientId and exactly the required payload keys for its event type |
+| correlation_id / causation_id / actor_user_id | Correlation and causation UUIDs required; actor UUID nullable under the envelope contract |
+| status / attempts | Initially PENDING / 0; PENDING, FAILED and PUBLISHED are local publication states; attempts never decreases |
+| next_retry_at / published_at | Pending work requires a finite retry instant; published work gets a server-stamped marker and no retry instant |
+| error_code | Optional uppercase code (at most 100 characters), required for FAILED; no free-form driver details |
+
+Facts, payload and tracing identifiers cannot change. DELETE/TRUNCATE are rejected;
+no history-purge policy is invented. FAILED may be reconciled to PENDING, while PUBLISHED
+is terminal. Counters/backoff limits and broker confirmation belong to the future relay.
+The pending partial index supports bounded `FOR UPDATE SKIP LOCKED` claims; an additional
+aggregate index supports the local foreign key. Concurrent claim checks verify row locks,
+not broker delivery, exactly-once processing or global business ordering.
+Full JSON Schema validation, event serialization, owner-side authorization and atomic
+profile/audit/outbox orchestration remain producer/application work. The publisher must
+mark PUBLISHED only after broker confirmation; a crash may cause same-event redelivery.
+Consumers still require Inbox deduplication, and current patient/guard contracts remain authoritative.
+
 ## Document equality
 
 Owner clarification approved on 2026-10-24: equality uses `upper(btrim(value))`
