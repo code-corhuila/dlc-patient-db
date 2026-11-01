@@ -25,7 +25,8 @@ class MigrationRebuildTest(unittest.TestCase):
         container = f"patients-postgres-{suffix}"
         env = dict(os.environ, PG_HOST=container, PG_PORT="5432",
                    PG_DATABASE="patients_ci", PG_MIGRATION_USER="postgres",
-                   PG_MIGRATION_PASSWORD=secrets.token_hex(24), PG_NETWORK=network)
+                   PG_MIGRATION_PASSWORD=secrets.token_hex(24),
+                   PG_RUNTIME_TEST_PASSWORD=secrets.token_hex(24), PG_NETWORK=network)
 
         def run(*args, check=True, input_text=None, return_result=False):
             try:
@@ -36,7 +37,8 @@ class MigrationRebuildTest(unittest.TestCase):
             if check and result.returncode:
                 # Credentials must not appear in failure diagnostics.
                 output = (result.stdout + result.stderr).replace(
-                    env["PG_MIGRATION_PASSWORD"], "[REDACTED]")
+                    env["PG_MIGRATION_PASSWORD"], "[REDACTED]").replace(
+                    env["PG_RUNTIME_TEST_PASSWORD"], "[REDACTED]")
                 self.fail(output)
             return result if return_result else result.stdout.strip()
 
@@ -60,6 +62,26 @@ class MigrationRebuildTest(unittest.TestCase):
                 print("Storage checks: " + name, flush=True)
                 fixture = inbox_support if name == "inbox_events" else ""
                 sql_script("BEGIN;\n" + support + fixture + (ROOT / f"tooling/tests/{name}.sql").read_text())
+
+        def runtime_sql(script, check=True):
+            return run("docker", "exec", "-i", "-e", "PGPASSWORD=" + env["PG_RUNTIME_TEST_PASSWORD"], container,
+                "psql", "-h", "127.0.0.1", "-U", "patients_runtime", "-d", env["PG_DATABASE"],
+                "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose", input_text=script,
+                check=check, return_result=not check)
+
+        def runtime_denied():
+            result = runtime_sql("SELECT count(*) FROM patients.patients;", check=False)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("42501", result.stderr)
+
+        def runtime_checks():
+            print("Runtime checks: authenticated least-privileged connection", flush=True)
+            sql("CREATE TABLE patients.runtime_future_probe (id integer)")
+            try:
+                runtime_sql("BEGIN;\n" + support + inbox_support +
+                            (ROOT / "tooling/tests/runtime_permissions.sql").read_text())
+            finally:
+                sql("DROP TABLE patients.runtime_future_probe RESTRICT")
 
         def concurrent_identity_check():
             def insert(n, kind, number):
@@ -137,10 +159,11 @@ class MigrationRebuildTest(unittest.TestCase):
                                     receive('80000000-0000-4000-8000-000000000003', 2), 'uk_inbox_events_source')
             self.assertEqual(sql("SELECT count(*) FROM patients.inbox_events"), "2")
 
-        def migrate(*args):
+        def migrate(*args, check=True):
             print("Liquibase: " + " ".join(args), flush=True)
             return run("docker", "compose", "-p", network, "-f", str(compose),
-                       "run", "--rm", "-v", f"{snapshot}:/workspace:ro", "patients-db-migrate", *args)
+                       "run", "--rm", "-v", f"{snapshot}:/workspace:ro", "patients-db-migrate", *args,
+                       check=check, return_result=not check)
 
         def schema_count():
             return sql("SELECT count(*) FROM pg_namespace WHERE nspname = 'patients'")
@@ -170,11 +193,14 @@ class MigrationRebuildTest(unittest.TestCase):
             sql("CREATE SCHEMA bootstrap_probe; "
                 "CREATE TABLE bootstrap_probe.marker (id integer PRIMARY KEY); "
                 "INSERT INTO bootstrap_probe.marker VALUES (1)")
+            sql("CREATE ROLE patients_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+                "NOREPLICATION NOBYPASSRLS PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
             migrate("validate")
             if SCHEMA_SMOKE:
                 print("Schema smoke: empty-store migration and current storage checks", flush=True)
                 migrate("update")
                 storage_checks()
+                runtime_checks()
                 concurrent_identity_check()
                 concurrent_idempotency_check()
                 concurrent_outbox_claim_check()
@@ -184,7 +210,7 @@ class MigrationRebuildTest(unittest.TestCase):
             migrate("update-count", "--count=1")
             history = "public.databasechangelog_patients"
             bootstrap = sql(f"SELECT id, md5sum, dateexecuted FROM {history}")
-            migrate("update", "--label-filter=!emergency-contacts and !patient-audit and !idempotency and !outbox and !inbox")
+            migrate("update", "--label-filter=!emergency-contacts and !patient-audit and !idempotency and !outbox and !inbox and !runtime")
             self.assertEqual(sql("SELECT to_regclass('patients.emergency_contacts') IS NULL"), "t")
             baseline_count = int(sql(f"SELECT count(*) FROM {history}"))
             prior_history_query = (f"SELECT id, md5sum, dateexecuted FROM {history} "
@@ -194,14 +220,14 @@ class MigrationRebuildTest(unittest.TestCase):
             patient_query = ("SELECT row_to_json(p)::text FROM patients.patients p "
                              "WHERE patient_id = '00000000-0000-4000-8000-000000000090'")
             prior_patient = sql(patient_query)
-            migrate("update", "--label-filter=!patient-audit and !idempotency and !outbox and !inbox")
+            migrate("update", "--label-filter=!patient-audit and !idempotency and !outbox and !inbox and !runtime")
             self.assertEqual(sql(patient_query), prior_patient)
             increment_count = int(sql(f"SELECT count(*) FROM {history}")) - baseline_count
             self.assertGreater(increment_count, 0)
             migrate("rollback-count", "--count=" + str(increment_count))
             self.assertEqual(sql("SELECT to_regclass('patients.emergency_contacts') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
-            migrate("update", "--label-filter=!patient-audit and !idempotency and !outbox and !inbox")
+            migrate("update", "--label-filter=!patient-audit and !idempotency and !outbox and !inbox and !runtime")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(prior_history_query), prior_history)
             # Upgrade from the delivered contacts schema, then reverse only the audit increment.
@@ -216,7 +242,7 @@ class MigrationRebuildTest(unittest.TestCase):
                              "emergency_contact_id = '20000000-0000-4000-8000-000000000090'")
             prior_contact = sql(contact_query)
             self.assertEqual(sql("SELECT to_regclass('patients.patient_audit') IS NULL"), "t")
-            migrate("update", "--label-filter=!idempotency and !outbox and !inbox")
+            migrate("update", "--label-filter=!idempotency and !outbox and !inbox and !runtime")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
             audit_count = int(sql(f"SELECT count(*) FROM {history}")) - audit_baseline
@@ -225,7 +251,7 @@ class MigrationRebuildTest(unittest.TestCase):
             self.assertEqual(sql("SELECT to_regclass('patients.patient_audit') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
-            migrate("update", "--label-filter=!idempotency and !outbox and !inbox")
+            migrate("update", "--label-filter=!idempotency and !outbox and !inbox and !runtime")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
             self.assertEqual(sql(old_history_query), old_history)
@@ -233,41 +259,66 @@ class MigrationRebuildTest(unittest.TestCase):
             previous_query = (f"SELECT id, md5sum, dateexecuted FROM {history} "
                               f"WHERE orderexecuted <= {retry_baseline} ORDER BY orderexecuted")
             previous = sql(previous_query)
-            migrate("update", "--label-filter=!outbox and !inbox")
+            migrate("update", "--label-filter=!outbox and !inbox and !runtime")
             retry_count = int(sql(f"SELECT count(*) FROM {history}")) - retry_baseline
             self.assertGreater(retry_count, 0)
             migrate("rollback-count", "--count=" + str(retry_count))
             self.assertEqual(sql("SELECT to_regclass('patients.idempotency_records') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
-            migrate("update", "--label-filter=!outbox and !inbox")
+            migrate("update", "--label-filter=!outbox and !inbox and !runtime")
             self.assertEqual(sql(previous_query), previous)
             outbox_baseline = int(sql(f"SELECT count(*) FROM {history}"))
             baseline_query = (f"SELECT id,md5sum,dateexecuted FROM {history} "
                               f"WHERE orderexecuted <= {outbox_baseline} ORDER BY orderexecuted")
             baseline_history = sql(baseline_query)
-            migrate("update", "--label-filter=!inbox")
+            migrate("update", "--label-filter=!inbox and !runtime")
             outbox_count = int(sql(f"SELECT count(*) FROM {history}")) - outbox_baseline
             self.assertGreater(outbox_count, 0)
             migrate("rollback-count", "--count=" + str(outbox_count))
             self.assertEqual(sql("SELECT to_regclass('patients.outbox_events') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
-            migrate("update", "--label-filter=!inbox")
+            migrate("update", "--label-filter=!inbox and !runtime")
             self.assertEqual(sql(baseline_query), baseline_history)
             inbox_baseline = int(sql(f"SELECT count(*) FROM {history}"))
             inbox_history_query = (f"SELECT id,md5sum,dateexecuted FROM {history} "
                                    f"WHERE orderexecuted <= {inbox_baseline} ORDER BY orderexecuted")
             inbox_history = sql(inbox_history_query)
-            migrate("update")
+            migrate("update", "--label-filter=!runtime")
             inbox_count = int(sql(f"SELECT count(*) FROM {history}")) - inbox_baseline
             self.assertEqual(inbox_count, 4)
             migrate("rollback-count", "--count=" + str(inbox_count))
             self.assertEqual(sql("SELECT to_regclass('patients.inbox_events') IS NULL"), "t")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
-            migrate("update")
+            migrate("update", "--label-filter=!runtime")
             self.assertEqual(sql(inbox_history_query), inbox_history)
+            grants_baseline = int(sql(f"SELECT count(*) FROM {history}"))
+            grants_query = (f"SELECT id,md5sum,dateexecuted FROM {history} "
+                            f"WHERE orderexecuted <= {grants_baseline} ORDER BY orderexecuted")
+            grants_history = sql(grants_query)
+            runtime_denied()
+            for change, restore in (
+                ("ALTER ROLE patients_runtime RENAME TO patients_runtime_absent",
+                 "ALTER ROLE patients_runtime_absent RENAME TO patients_runtime"),
+                ("ALTER ROLE patients_runtime CREATEROLE", "ALTER ROLE patients_runtime NOCREATEROLE")):
+                sql(change)
+                try:
+                    rejected = migrate("update", check=False)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn("precondition", (rejected.stdout + rejected.stderr).lower())
+                finally:
+                    sql(restore)
+            migrate("update")
+            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")) - grants_baseline, 1)
+            runtime_checks()
+            migrate("rollback-count", "--count=1")
+            runtime_denied()
+            self.assertEqual(sql(patient_query), prior_patient)
+            self.assertEqual(sql(contact_query), prior_contact)
+            self.assertEqual(sql(grants_query), grants_history)
+            migrate("update")
             sql("DELETE FROM patients.emergency_contacts WHERE "
                 "emergency_contact_id = '20000000-0000-4000-8000-000000000090'")
             sql("DELETE FROM patients.patients WHERE "
@@ -276,6 +327,7 @@ class MigrationRebuildTest(unittest.TestCase):
             self.assertEqual(sql(f"SELECT id, md5sum, dateexecuted FROM {history} "
                                  "WHERE id = 'patients-ddl-schema-001'"), bootstrap)
             storage_checks()
+            runtime_checks()
             concurrent_identity_check()
             concurrent_idempotency_check()
             concurrent_outbox_claim_check()
@@ -286,7 +338,13 @@ class MigrationRebuildTest(unittest.TestCase):
             migrate("update")
             self.assertEqual(sql(f"SELECT id, author, md5sum, dateexecuted "
                                  f"FROM {history} ORDER BY orderexecuted"), recorded)
+            # Liquibase sorts rollback by DATEEXECUTED, then ORDEREXECUTED.
+            chronology = sql(f"SELECT count(*) FROM (SELECT dateexecuted, "
+                             f"lag(dateexecuted) OVER (ORDER BY orderexecuted) previous FROM {history}) h "
+                             "WHERE dateexecuted < previous")
+            self.assertEqual(chronology, "0", "Non-monotonic migration clock; inspect host/database time before rollback")
             count = sql(f"SELECT count(*) FROM {history}")
+            print("Rollback history: " + sql(f"SELECT id,orderexecuted,dateexecuted FROM {history} ORDER BY dateexecuted,orderexecuted"), flush=True)
             migrate("rollback-count", "--count=" + count)
             self.assertEqual(schema_count(), "0")
             self.assertEqual(sql(f"SELECT count(*) FROM {history}"), "0")
@@ -294,11 +352,13 @@ class MigrationRebuildTest(unittest.TestCase):
             self.assertEqual(schema_count(), "1")
             self.assertEqual(sql(f"SELECT count(*) FROM {history}"), count)
             storage_checks()
+            runtime_checks()
             self.assertEqual(sql("SELECT id FROM bootstrap_probe.marker"), "1")
         except AssertionError:
             diagnostics = run("docker", "logs", container, check=False, return_result=True)
             print((diagnostics.stdout + diagnostics.stderr).replace(
-                env["PG_MIGRATION_PASSWORD"], "[REDACTED]"), flush=True)
+                env["PG_MIGRATION_PASSWORD"], "[REDACTED]").replace(
+                    env["PG_RUNTIME_TEST_PASSWORD"], "[REDACTED]"), flush=True)
             raise
         finally:
             run("docker", "rm", "-fv", container, check=False)
