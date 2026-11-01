@@ -41,4 +41,5 @@ Tests authenticate as the runtime login over TCP, exercise all six tables and wo
 row locks, and reject foreign-owner/metadata access, persistent DDL, role escalation,
 trigger disabling, history rewrites and unexpected access to a future table. Temporary
 helpers use the disposable database's TEMP privilege; database/PUBLIC policy, deployment
-secrets and a non-superuser migration-identity integration remain external work.
+secrets remain external work. See [environment bootstrap](environment-bootstrap.md)
+for the separately tested non-superuser migrator and its deployment boundaries.
