@@ -1,1 +1,4 @@
-databaseChangeLog: []
+databaseChangeLog:
+  - include:
+      file: 01_grants/changelog.yaml
+      relativeToChangelogFile: true
