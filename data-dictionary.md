@@ -161,7 +161,9 @@ Document types remain text because dlc-docs defines no closed type catalog.
 Actor references have no foreign keys into IAM. There are no cross-schema queries,
 clinical fields or financial fields. Identifier protection is a local trigger;
 normal profile changes remain available without changing patient_id.
-Runtime privileges, authoritative deactivation and atomic business/audit/outbox writes
+Authoritative deactivation and atomic business/audit/outbox writes
 are separate increments. Profile defaults do not authenticate actors; audit triggers
 protect ordinary DML but do not replace restrictions on DDL-capable migration credentials.
 SQL constraints complement application/domain validation; they do not authorize access.
+
+Explicit database permissions and their provisioning boundaries are described in [runtime permissions](runtime-permissions.md).
