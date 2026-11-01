@@ -38,3 +38,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/04_alter/003_outbox_events_patient.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-alter-004
+      author: DanielPerez1822
+      labels: "deactivation-operations,ddl,alter"
+      comment: "Durable Patients deactivation intent and local outcome: alter."
+      changes:
+        - sqlFile:
+            path: 004_deactivation_operations_patient.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/04_alter/004_deactivation_operations_patient.rollback.sql
+            relativeToChangelogFile: true

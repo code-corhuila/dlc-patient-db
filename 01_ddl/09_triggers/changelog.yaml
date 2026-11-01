@@ -64,3 +64,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/09_triggers/005_inbox_events_protection.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-triggers-006
+      author: DanielPerez1822
+      labels: "deactivation-operations,ddl,triggers"
+      comment: "Durable Patients deactivation intent and local outcome: triggers."
+      changes:
+        - sqlFile:
+            path: 006_deactivation_operations_protection.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/09_triggers/006_deactivation_operations_protection.rollback.sql
+            relativeToChangelogFile: true
