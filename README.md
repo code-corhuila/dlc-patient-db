@@ -19,6 +19,8 @@ with an immutable request hash/response and at least seven days of retention.
 The local outbox stores patient lifecycle events and their publication metadata,
 with immutable facts and indexed pending batches.
 The inbox stores assignment events with event/source deduplication and local processing markers.
+Deactivation intents retain request identity, guard fingerprints and irreversible local outcomes;
+the cross-service guard adapter and atomic use-case orchestration remain pending.
 Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
 deactivation, HTTP replay handling, inbox consumer, broker relay and seeds remain pending.
 Explicit least-privilege runtime grants are included; see [runtime permissions](runtime-permissions.md).

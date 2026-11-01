@@ -68,4 +68,17 @@ BEGIN
         RAISE EXCEPTION 'Invoker triggers did not stamp worker outcomes';
     END IF;
 END; $$;
+DO $$ BEGIN
+    IF to_regclass('patients.deactivation_operations') IS NOT NULL THEN
+        INSERT INTO patients.deactivation_operations (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason)
+        VALUES ('b1000000-0000-4000-8000-000000000071','00000000-0000-4000-8000-000000000071',
+            '10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000071',2,'Synthetic intent');
+        UPDATE patients.deactivation_operations SET guard_id='d1000000-0000-4000-8000-000000000071',guard_token_hash=repeat('a',64);
+        UPDATE patients.deactivation_operations SET outcome='ABORTED';
+        PERFORM operation_id FROM patients.deactivation_operations FOR UPDATE SKIP LOCKED;
+        PERFORM pg_temp.expect_denied('UPDATE patients.deactivation_operations SET reason=reason');
+        PERFORM pg_temp.expect_denied('DELETE FROM patients.deactivation_operations');
+        PERFORM pg_temp.expect_denied('TRUNCATE patients.deactivation_operations');
+    END IF;
+END; $$;
 ROLLBACK;
