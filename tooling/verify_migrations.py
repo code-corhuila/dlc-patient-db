@@ -6,6 +6,7 @@ from pathlib import Path
 import secrets
 import subprocess
 import sys
+import tempfile
 import time
 import unittest
 import uuid
@@ -13,11 +14,13 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_SMOKE = False
+ENVIRONMENT = None
 
 
 class MigrationRebuildTest(unittest.TestCase):
     def test_update_repeat_rollback_and_reapply_preserve_other_owners(self):
-        compose = ROOT / "deploy" / "compose.yml"
+        self.assertIn(ENVIRONMENT, (None, "dev", "qa", "prod"))
+        compose = ROOT / "deploy" / ("compose.environment.yml" if ENVIRONMENT else "compose.yml")
         self.assertTrue(compose.is_file(), "Patients migration runner is missing")
         suffix = uuid.uuid4().hex[:12]
         network = f"patients-ci-{suffix}"
@@ -26,7 +29,21 @@ class MigrationRebuildTest(unittest.TestCase):
         env = dict(os.environ, PG_HOST=container, PG_PORT="5432",
                    PG_DATABASE="patients_ci", PG_MIGRATION_USER="postgres",
                    PG_MIGRATION_PASSWORD=secrets.token_hex(24),
-                   PG_RUNTIME_TEST_PASSWORD=secrets.token_hex(24), PG_NETWORK=network)
+                   PG_RUNTIME_TEST_PASSWORD=secrets.token_hex(24),
+                   PG_OWNER_TEST_PASSWORD=secrets.token_hex(24), PG_NETWORK=network)
+
+        if ENVIRONMENT:
+            temporary = tempfile.TemporaryDirectory(prefix="patients-env-")
+            self.assertEqual(Path(temporary.name).resolve().parent, Path(tempfile.gettempdir()).resolve())
+            self.addCleanup(temporary.cleanup)
+            password_file = Path(temporary.name) / "migrator-password"
+            password_file.write_text(env["PG_OWNER_TEST_PASSWORD"])
+            env.update(PG_ENVIRONMENT=ENVIRONMENT, PG_MIGRATOR_PASSWORD_FILE=str(password_file))
+
+        def redact(output):
+            for key in ("PG_MIGRATION_PASSWORD", "PG_RUNTIME_TEST_PASSWORD", "PG_OWNER_TEST_PASSWORD"):
+                output = output.replace(env[key], "[REDACTED]")
+            return output
 
         def run(*args, check=True, input_text=None, return_result=False):
             try:
@@ -36,9 +53,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 self.fail("Docker command exceeded 180 seconds; check engine/registry access")
             if check and result.returncode:
                 # Credentials must not appear in failure diagnostics.
-                output = (result.stdout + result.stderr).replace(
-                    env["PG_MIGRATION_PASSWORD"], "[REDACTED]").replace(
-                    env["PG_RUNTIME_TEST_PASSWORD"], "[REDACTED]")
+                output = redact(result.stdout + result.stderr)
                 self.fail(output)
             return result if return_result else result.stdout.strip()
 
@@ -50,10 +65,10 @@ class MigrationRebuildTest(unittest.TestCase):
 
         support = (ROOT / "tooling/tests/support.sql").read_text()
 
-        def sql_script(script):
-            run("docker", "exec", "-i", container, "psql", "-U", "postgres",
+        def sql_script(script, check=True):
+            return run("docker", "exec", "-i", container, "psql", "-U", "postgres",
                 "-d", env["PG_DATABASE"], "-v", "ON_ERROR_STOP=1",
-                input_text=script)
+                input_text=script, check=check, return_result=not check)
 
         inbox_support = (ROOT / "tooling/tests/inbox_support.sql").read_text()
 
@@ -63,11 +78,14 @@ class MigrationRebuildTest(unittest.TestCase):
                 fixture = inbox_support if name == "inbox_events" else ""
                 sql_script("BEGIN;\n" + support + fixture + (ROOT / f"tooling/tests/{name}.sql").read_text())
 
-        def runtime_sql(script, check=True):
-            return run("docker", "exec", "-i", "-e", "PGPASSWORD=" + env["PG_RUNTIME_TEST_PASSWORD"], container,
-                "psql", "-h", "127.0.0.1", "-U", "patients_runtime", "-d", env["PG_DATABASE"],
+        def role_sql(user, password, script, check=True):
+            return run("docker", "exec", "-i", "-e", "PGPASSWORD=" + password, container,
+                "psql", "-h", "127.0.0.1", "-U", user, "-d", env["PG_DATABASE"],
                 "-v", "ON_ERROR_STOP=1", "-v", "VERBOSITY=verbose", input_text=script,
                 check=check, return_result=not check)
+
+        def runtime_sql(script, check=True):
+            return role_sql("patients_runtime", env["PG_RUNTIME_TEST_PASSWORD"], script, check)
 
         def runtime_denied():
             result = runtime_sql("SELECT count(*) FROM patients.patients;", check=False)
@@ -165,6 +183,73 @@ class MigrationRebuildTest(unittest.TestCase):
                        "run", "--rm", "-v", f"{snapshot}:/workspace:ro", "patients-db-migrate", *args,
                        check=check, return_result=not check)
 
+        def environment_checks():
+            bootstrap_sql = (ROOT / "deploy/bootstrap.sql").read_text()
+            sql_script(bootstrap_sql)
+            sql_script(bootstrap_sql)
+            metadata = "SELECT oid,relowner FROM pg_class WHERE oid IN ('public.databasechangelog_patients'::regclass,'public.databasechangeloglock_patients'::regclass) ORDER BY oid"
+            before_metadata = sql(metadata)
+            sql("ALTER ROLE patients_runtime CREATEROLE")
+            try:
+                self.assertNotEqual(sql_script(bootstrap_sql, check=False).returncode, 0)
+            finally:
+                sql("ALTER ROLE patients_runtime NOCREATEROLE")
+            sql("ALTER ROLE patients_migrator PASSWORD '" + env["PG_OWNER_TEST_PASSWORD"] + "'; "
+                "ALTER ROLE patients_runtime PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
+            for bad_environment in ("staging", ""):
+                env["PG_ENVIRONMENT"] = bad_environment
+                try:
+                    rejected = migrate("validate", check=False)
+                    self.assertNotEqual(rejected.returncode, 0)
+                    self.assertIn("PG_ENVIRONMENT", rejected.stdout + rejected.stderr)
+                finally:
+                    env["PG_ENVIRONMENT"] = ENVIRONMENT
+            password_file.write_text("")
+            try:
+                rejected = migrate("validate", check=False)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("Empty migrator secret", rejected.stdout + rejected.stderr)
+            finally:
+                password_file.write_text(env["PG_OWNER_TEST_PASSWORD"])
+            migrate("validate")
+            migrate("update-count", "--count=1")
+            sql_script(bootstrap_sql)
+            self.assertEqual(sql("SELECT has_database_privilege('patients_migrator',current_database(),'CREATE')"), "f")
+            migrate("update", "--label-filter=!runtime")
+            history = "SELECT id,md5sum,dateexecuted FROM public.databasechangelog_patients"
+            baseline = sql(history + " WHERE orderexecuted<=26 ORDER BY orderexecuted")
+            sql("ALTER SCHEMA patients OWNER TO postgres")
+            try:
+                rejected = sql_script(bootstrap_sql, check=False)
+                self.assertNotEqual(rejected.returncode, 0)
+                self.assertIn("another owner", rejected.stderr)
+            finally:
+                sql("ALTER SCHEMA patients OWNER TO patients_migrator")
+            sql_script(bootstrap_sql)  # Seal database CREATE after schema creation.
+            self.assertEqual(sql("SELECT has_database_privilege('patients_migrator',current_database(),'CREATE')"), "f")
+            migrate("update")
+            self.assertEqual(sql(history + " WHERE orderexecuted<=26 ORDER BY orderexecuted"), baseline)
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "27")
+            for query in (
+                "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='patients'",
+                "SELECT DISTINCT pg_get_userbyid(relowner) FROM pg_class WHERE relnamespace='patients'::regnamespace",
+                "SELECT DISTINCT pg_get_userbyid(proowner) FROM pg_proc WHERE pronamespace='patients'::regnamespace"):
+                self.assertEqual(sql(query), "patients_migrator")
+            for statement in ("CREATE SCHEMA forbidden", "CREATE TABLE public.forbidden(id integer)",
+                              "CREATE EXTENSION pgcrypto", "SELECT * FROM bootstrap_probe.marker",
+                              "UPDATE bootstrap_probe.marker SET id=2", "DROP TABLE bootstrap_probe.marker",
+                              "SET ROLE postgres", "CREATE ROLE forbidden"):
+                denied = role_sql("patients_migrator", env["PG_OWNER_TEST_PASSWORD"], statement, check=False)
+                self.assertNotEqual(denied.returncode, 0)
+                self.assertIn("42501", denied.stderr)
+            recorded = sql(history + " ORDER BY orderexecuted")
+            migrate("update")
+            self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
+            self.assertEqual(sql(metadata), before_metadata)
+            runtime_checks()
+            self.assertEqual(sql("SELECT id FROM bootstrap_probe.marker"), "1")
+            print("Environment PASS: " + ENVIRONMENT, flush=True)
+
         def schema_count():
             return sql("SELECT count(*) FROM pg_namespace WHERE nspname = 'patients'")
 
@@ -179,7 +264,8 @@ class MigrationRebuildTest(unittest.TestCase):
             run("docker", "run", "--rm", "--entrypoint", "sh", "-v", f"{ROOT}:/source:ro",
                 "-v", f"{snapshot}:/snapshot", "postgres:16.6-alpine", "-ec",
                 "cp -R /source/01_ddl /source/02_dml /source/03_dcl /source/04_tcl "
-                "/source/05_rollbacks /source/changelog /snapshot/")
+                "/source/05_rollbacks /source/changelog /snapshot/ && mkdir /snapshot/deploy && "
+                "cp /source/deploy/run-migration.sh /snapshot/deploy/")
             run("docker", "run", "-d", "--name", container, "--network", network,
                 "-e", "POSTGRES_DB=" + env["PG_DATABASE"],
                 "-e", "POSTGRES_PASSWORD=" + env["PG_MIGRATION_PASSWORD"],
@@ -193,6 +279,9 @@ class MigrationRebuildTest(unittest.TestCase):
             sql("CREATE SCHEMA bootstrap_probe; "
                 "CREATE TABLE bootstrap_probe.marker (id integer PRIMARY KEY); "
                 "INSERT INTO bootstrap_probe.marker VALUES (1)")
+            if ENVIRONMENT:
+                environment_checks()
+                return
             sql("CREATE ROLE patients_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
                 "NOREPLICATION NOBYPASSRLS PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
             migrate("validate")
@@ -356,9 +445,7 @@ class MigrationRebuildTest(unittest.TestCase):
             self.assertEqual(sql("SELECT id FROM bootstrap_probe.marker"), "1")
         except AssertionError:
             diagnostics = run("docker", "logs", container, check=False, return_result=True)
-            print((diagnostics.stdout + diagnostics.stderr).replace(
-                env["PG_MIGRATION_PASSWORD"], "[REDACTED]").replace(
-                    env["PG_RUNTIME_TEST_PASSWORD"], "[REDACTED]"), flush=True)
+            print(redact(diagnostics.stdout + diagnostics.stderr), flush=True)
             raise
         finally:
             run("docker", "rm", "-fv", container, check=False)
@@ -370,4 +457,7 @@ if __name__ == "__main__":
     SCHEMA_SMOKE = "--schema-smoke" in sys.argv
     if SCHEMA_SMOKE:
         sys.argv.remove("--schema-smoke")
+    ENVIRONMENT = next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--environment=")), None)
+    if ENVIRONMENT is not None:
+        sys.argv.remove("--environment=" + ENVIRONMENT)
     unittest.main(verbosity=2)
