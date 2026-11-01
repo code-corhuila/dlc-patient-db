@@ -1,0 +1,4 @@
+DROP INDEX patients.idx_deactivation_operations_pending;
+DROP INDEX patients.idx_deactivation_operations_patient_created_at;
+DROP INDEX patients.uk_deactivation_operations_guard;
+DROP INDEX patients.uk_deactivation_operations_request;

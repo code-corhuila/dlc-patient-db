@@ -36,7 +36,7 @@ Back up and verify restore before any transition of an existing installation.
 `python -B tooling/verify_migrations.py --environment=dev` (also qa/prod) uses a unique
 disposable PostgreSQL, three independent synthetic secrets and the actual secret-based
 runner. It checks repeatable bootstrap, unsafe roles/foreign ownership, invalid/missing
-environments, empty secrets, restricted ownership, upgrade from the 26-change baseline,
+environments, empty secrets, restricted ownership, upgrade through the delivered 26/27-change baselines to the current schema,
 unchanged prior history/control-table OIDs, denied cross-owner/DDL/extension operations,
 repeat update and the existing authenticated runtime suite. CI runs the three contexts.
 The ordinary full migration/rollback job remains separate and uses the administrative

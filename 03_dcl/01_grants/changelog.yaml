@@ -29,3 +29,22 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/03_dcl/01_grants/001_patients_runtime.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-dcl-grants-002
+      author: DanielPerez1822
+      labels: "deactivation-operations,dcl,grants"
+      comment: "Durable Patients deactivation intent and local outcome: grants."
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - sqlCheck:
+            expectedResult: "1"
+            sql: "SELECT count(*) FROM pg_roles WHERE rolname='patients_runtime' AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls) AND has_schema_privilege(rolname,'patients','USAGE') AND NOT has_schema_privilege(rolname,'patients','CREATE')"
+      changes:
+        - sqlFile:
+            path: 002_deactivation_operations.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/002_deactivation_operations.rollback.sql
+            relativeToChangelogFile: true

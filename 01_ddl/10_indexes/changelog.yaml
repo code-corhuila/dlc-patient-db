@@ -77,3 +77,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/10_indexes/006_inbox_events_processing.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-indexes-007
+      author: DanielPerez1822
+      labels: "deactivation-operations,ddl,indexes"
+      comment: "Durable Patients deactivation intent and local outcome: indexes."
+      changes:
+        - sqlFile:
+            path: 007_deactivation_operations.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/007_deactivation_operations.rollback.sql
+            relativeToChangelogFile: true

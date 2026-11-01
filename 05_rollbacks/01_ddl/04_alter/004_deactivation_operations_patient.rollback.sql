@@ -1,0 +1,1 @@
+ALTER TABLE patients.deactivation_operations DROP CONSTRAINT fk_deactivation_operations_patient;

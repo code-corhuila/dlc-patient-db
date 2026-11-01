@@ -69,3 +69,17 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/07_functions/005_protect_inbox_events.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-006
+      author: DanielPerez1822
+      labels: "deactivation-operations,ddl,functions"
+      comment: "Durable Patients deactivation intent and local outcome: functions."
+      changes:
+        - sqlFile:
+            path: 006_protect_deactivation_operations.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/006_protect_deactivation_operations.rollback.sql
+            relativeToChangelogFile: true
