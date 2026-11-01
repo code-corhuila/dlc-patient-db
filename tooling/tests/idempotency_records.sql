@@ -75,10 +75,12 @@ BEGIN
 END;
 $$;
 SAVEPOINT timestamp_check;
-SELECT pg_temp.retry_candidate('created_at', '"1900-01-01T00:00:00Z"');
-DO $$ BEGIN
-    IF EXISTS (SELECT FROM patients.idempotency_records WHERE created_at < CURRENT_TIMESTAMP) THEN
-        RAISE EXCEPTION 'Caller backdated the retry retention';
+DO $$ DECLARE expected_stamp timestamptz := statement_timestamp();
+BEGIN
+    PERFORM pg_temp.retry_candidate('created_at', '"1900-01-01T00:00:00Z"');
+    IF NOT EXISTS (SELECT FROM patients.idempotency_records WHERE
+        idempotency_key='40000000-0000-4000-8000-000000000099' AND created_at=expected_stamp) THEN
+        RAISE EXCEPTION 'Server did not replace the caller timestamp';
     END IF;
 END; $$;
 ROLLBACK TO timestamp_check;

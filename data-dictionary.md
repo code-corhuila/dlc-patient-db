@@ -167,3 +167,30 @@ protect ordinary DML but do not replace restrictions on DDL-capable migration cr
 SQL constraints complement application/domain validation; they do not authorize access.
 
 Explicit database permissions and their provisioning boundaries are described in [runtime permissions](runtime-permissions.md).
+
+## patients.deactivation_operations
+
+Implements caller-side intent storage from ADR-017 and the Patients data model.
+
+| Fields | Contract |
+|---|---|
+| operation_id / patient_id | Stable operation UUID / restricted local patient FK |
+| actor_id / idempotency_key | Required UUIDs; request uniqueness is actor + patient + key for deactivation |
+| expected_version / reason | Immutable request values: positive profile version and nonblank reason, 1-1000 characters |
+| guard_id / guard_token_hash | Both absent before acquisition; external guard UUID and lowercase SHA-256 fingerprint together afterward |
+| outcome | Local PENDING, FINALIZED or ABORTED; starts PENDING, terminal decisions cannot change |
+| operation_version | Server-incremented optimistic revision, separate from expected profile version |
+| created_at / updated_at / completed_at | Server instants; terminal completion is immutable even when proof rotates |
+
+Persist the intent before HTTP acquisition. A guard cannot be reassigned or shared by
+operations; its fingerprint can rotate, including after local completion, for ADR-017 recovery.
+A hash cannot reconstruct the token: reacquire with the same operationId and use the new
+opaque token only in the private resolution body. Never store/log the raw token here.
+FINALIZED requires a stored guard, but means local commit, not remote acknowledgement.
+The application must commit profile, audit, outbox and local FINALIZED atomically, compare
+operation_version on competing updates, and prove a non-retriable abort before ABORTED.
+Unknown outcomes stay PENDING; there is no time expiry or automatic release/deletion.
+SQL stores facts and supports transactions; it does not validate Appointments proofs,
+implement guard admission, authenticate staff or prove a distributed outcome. Remote
+resolution acknowledgement, reconciliation workers and provider/concurrency tests remain pending.
+Existing HTTP idempotency results remain separate; compare request values on key conflicts.
