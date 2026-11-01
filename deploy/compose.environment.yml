@@ -1,0 +1,22 @@
+# Owner-scoped runner; PostgreSQL is provisioned by infrastructure.
+services:
+  patients-db-migrate:
+    image: liquibase/liquibase:4.29.2
+    volumes:
+      - ../:/workspace:ro
+    entrypoint: ["/bin/sh", "/workspace/deploy/run-migration.sh"]
+    environment:
+      PG_HOST: ${PG_HOST:?set PG_HOST}
+      PG_PORT: ${PG_PORT:-5432}
+      PG_DATABASE: ${PG_DATABASE:?set PG_DATABASE}
+      PG_ENVIRONMENT: ${PG_ENVIRONMENT:?set PG_ENVIRONMENT}
+    secrets: [patients_migrator_password]
+    command: [update]
+    networks: [platform]
+secrets:
+  patients_migrator_password:
+    file: ${PG_MIGRATOR_PASSWORD_FILE:?set PG_MIGRATOR_PASSWORD_FILE}
+networks:
+  platform:
+    name: ${PG_NETWORK:?set PG_NETWORK}
+    external: true

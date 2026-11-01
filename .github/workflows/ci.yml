@@ -19,3 +19,17 @@ jobs:
           python-version: '3.12'
       - name: Verify Patients migrations against disposable PostgreSQL
         run: python -B tooling/verify_migrations.py
+  environment-migrations:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, qa, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify owner bootstrap and migration in disposable PostgreSQL
+        run: python -B tooling/verify_migrations.py --environment=${{ matrix.environment }}

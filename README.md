@@ -35,19 +35,17 @@ No clinical history, credentials, appointment or financial data belongs here.
 
 ## Run migrations
 
-Requires Docker Compose and an existing PostgreSQL instance/network provisioned
-by `dlc-infra-postgres`. Copy `.env.example` to `.env` and supply local values.
-The migration credential must be provisioned separately from the runtime user.
-This bootstrap needs schema creation and access to its own Liquibase control tables
-in `public`: `databasechangelog_patients` and `databasechangeloglock_patients`.
-Those are technical metadata; business tables belong only to `patients`.
-Provision `patients_runtime` separately before update; migrations do not create roles or credentials.
-Owner-scoped migration credentials and integration with infrastructure remain to be verified.
+Follow [environment bootstrap](environment-bootstrap.md) for dev/qa/prod with
+`patients_migrator`, a mounted secret and an explicit environment context.
+Infrastructure provisions the shared PostgreSQL; the authorized DBA provisions the
+roles and the existing owner-specific Liquibase control tables in public.
+Create the schema through its canonical first changeset, then revoke database CREATE
+before applying business migrations. Existing-installation ownership transitions,
+real infrastructure bindings and deployment/restore evidence remain pending.
 
-```sh
-docker compose --env-file .env -f deploy/compose.yml run --rm patients-db-migrate validate
-docker compose --env-file .env -f deploy/compose.yml run --rm patients-db-migrate update
-```
+The older `deploy/compose.yml` and `.env.example` retain the direct-credential interface
+used by the disposable verifier. Environment deployment uses
+`deploy/compose.environment.yml` and `deploy/.env.environment.example` instead.
 
 ## Verify
 
