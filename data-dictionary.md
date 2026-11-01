@@ -119,6 +119,34 @@ profile/audit/outbox orchestration remain producer/application work. The publish
 mark PUBLISHED only after broker confirmation; a crash may cause same-event redelivery.
 Consumers still require Inbox deduplication, and current patient/guard contracts remain authoritative.
 
+## patients.inbox_events
+
+Storage for ClinicalAssignmentStarted/ClinicalAssignmentEnded v1 from appointments-service,
+following `03-patients-service/events.md`, `event-ordering.md` and their canonical schemas.
+
+| Field | Storage contract |
+|---|---|
+| event_id | Immutable UUID primary key, deduplicates transport redelivery |
+| aggregate_id / aggregate_type | Assignment UUID / ClinicalAssignment; no cross-owner or local patient FK |
+| event_type / event_version / producer | The two assignment events, envelope schema version 1, appointments-service |
+| assignment_version | Positive payload business version; distinct from envelope version, must match payload.version |
+| payload | Required object, matching assignmentId, exact required keys for the selected event |
+| occurred_at / recorded_at | Finite source instant / server-stamped reception instant |
+| correlation_id / causation_id / actor_user_id | Required trace UUIDs / nullable actor UUID |
+| status / attempts | Initially PENDING / 0; FAILED can retry; PROCESSED is terminal; attempts never decreases |
+| next_retry_at / processed_at / error_code | Finite pending retry, server processing marker, optional safe code required on FAILED |
+
+Unique `(producer, aggregate_id, event_type, assignment_version)` prevents distinct IDs
+from representing the same source fact twice. Facts cannot change or be deleted/truncated;
+retention/purge policy remains undefined. Pending batches have a partial retry index.
+The future consumer must validate the full JSON Schema and quarantine unknown/malformed
+or conflicting facts before mutation; SQL checks are complementary. Existing PENDING/FAILED
+records do not justify ACK. Commit invalidation and processing marker atomically before ACK;
+a stored marker alone does not implement broker acknowledgement or exactly-once delivery.
+Business versions invalidate stale projections; neither event arrival order nor this table
+confers access. Current owner validation remains mandatory. Consumer retries/backoff,
+quarantine, minimized projection invalidation and broker integration remain pending.
+
 ## Document equality
 
 Owner clarification approved on 2026-10-24: equality uses `upper(btrim(value))`

@@ -18,8 +18,9 @@ Completed retry outcomes are stored by principal, operation, resource and UUID k
 with an immutable request hash/response and at least seven days of retention.
 The local outbox stores patient lifecycle events and their publication metadata,
 with immutable facts and indexed pending batches.
+The inbox stores assignment events with event/source deduplication and local processing markers.
 Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
-deactivation, HTTP replay handling, inbox, broker relay, seeds and runtime grants remain pending.
+deactivation, HTTP replay handling, inbox consumer, broker relay, seeds and runtime grants remain pending.
 No clinical history, credentials, appointment or financial data belongs here.
 
 ## Layout
@@ -73,7 +74,8 @@ and journal/profile rollback. Migration files are copied unchanged to a disposab
 Linux volume for verification; the production Compose runner retains its read-only bind mount.
 Outbox checks cover event identity, payload keys, publication transitions, local
 transaction rollback and disjoint row-lock claims; no broker delivery is claimed.
-A foreign-owner fixture must survive.
+Inbox checks cover both deduplication keys, concurrent delivery, immutable facts,
+retry/processing states and atomic local effect markers. A foreign-owner fixture must survive.
 Only its uniquely named test container, network and migration snapshot volume are removed.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
