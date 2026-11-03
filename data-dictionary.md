@@ -37,7 +37,8 @@ not treated as duplicate identities. `fk_emergency_contacts_patient` rejects orp
 and uses ON UPDATE RESTRICT / ON DELETE RESTRICT; it never cascades patient deletion.
 `idx_emergency_contacts_patient_id` supports the reference and contact lookup.
 Changing patient status does not remove contacts. This does not replace API authorization,
-the guarded deactivation protocol or the pending runtime privilege restrictions.
+the guarded deactivation protocol. [Runtime grants](runtime-permissions.md) restrict
+technical access; business authorization remains an application responsibility.
 
 ## Patient audit — HU-PAT-001
 
@@ -61,7 +62,8 @@ The history index starts with patient_id, then recorded_at and audit_id.
 UPDATE, DELETE and TRUNCATE are rejected, including a cascading parent TRUNCATE.
 This is explicit audit storage, not automatic auditing of every profile write.
 The API must supply an authorized actor and write profile/audit/outbox atomically.
-Runtime grants and retention operations remain separate work; no purge is introduced.
+Explicit runtime grants are implemented; retention operations remain separate work
+and no purge is introduced.
 
 ## Idempotency records — HU-PAT-001
 

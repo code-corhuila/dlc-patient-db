@@ -14,6 +14,8 @@ contract field limits and an indexed local patient reference with restricted del
 Append-only administrative audit records include actor, action, profile version,
 server time, field names and a required deactivation reason. See [data dictionary](data-dictionary.md).
 This is an increment of HU-PAT-001, not complete functional acceptance.
+The [readiness review](readiness.md) maps implemented checks, revision-linked evidence
+and open acceptance/deployment work; it is not a release approval.
 Completed retry outcomes are stored by principal, operation, resource and UUID key,
 with an immutable request hash/response and at least seven days of retention.
 The local outbox stores patient lifecycle events and their publication metadata,
@@ -31,7 +33,7 @@ see [query shapes, prerequisites and limits](query-indexes.md).
 
 ## Layout
 
-- `01_ddl/`: schema definitions; foreign keys will follow table creation.
+- `01_ddl/`: tables, restricted local foreign keys, functions, triggers and indexes.
 - `02_dml/`, `03_dcl/`, `04_tcl/`: seeds, permissions and transaction operations.
 - `05_rollbacks/`: explicit SQL reversals, without cross-owner cascading drops.
 - `changelog/changelog-master.yaml`: the single Liquibase entry point.
