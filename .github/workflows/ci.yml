@@ -43,3 +43,17 @@ jobs:
           python-version: '3.12'
       - name: Verify complete disposable database backup and recovery
         run: python -B tooling/verify_migrations.py --environment=dev --backup-restore
+  synthetic-seeds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [dev, qa, prod]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify synthetic seed isolation and recovery
+        run: python -B tooling/verify_migrations.py --environment=${{ matrix.environment }} --synthetic-seeds

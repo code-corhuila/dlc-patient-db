@@ -22,7 +22,7 @@ The inbox stores assignment events with event/source deduplication and local pro
 Deactivation intents retain request identity, guard fingerprints and irreversible local outcomes;
 the cross-service guard adapter and atomic use-case orchestration remain pending.
 Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
-deactivation, HTTP replay handling, inbox consumer, broker relay and seeds remain pending.
+deactivation, HTTP replay handling, inbox consumer and broker relay remain pending.
 Explicit least-privilege runtime grants are included; see [runtime permissions](runtime-permissions.md).
 No clinical history, credentials, appointment or financial data belongs here.
 
@@ -95,6 +95,12 @@ forward corrections. Never edit an applied changeset.
 Backup/restore verification uses a separate disposable database and authenticated runtime;
 see [recovery procedure and evidence limits](backup-restore.md). Run
 `python -B tooling/verify_migrations.py --environment=dev --backup-restore` with Docker.
+
+## Synthetic seeds
+
+Synthetic profile/contact snapshots are available only with explicit dev/qa contexts;
+see [seed scope and protected rollback](synthetic-seeds.md). Verify with
+`python -B tooling/verify_migrations.py --environment=dev --synthetic-seeds`.
 
 ## Contribution
 
