@@ -87,8 +87,9 @@ Runtime checks authenticate a separate synthetic login and verify allowed DML, d
 persistent DDL, metadata/foreign-owner access and grant rollback. Missing/unsafe roles
 block migration; future tables receive no automatic runtime grants.
 Only its uniquely named test container, network and migration snapshot volume are removed.
-Rollback checks reject non-monotonic migration timestamps before reversal;
-inspect host/database clock synchronization if this guard fails.
+Every historical, seed and full rollback is checked before invoking Liquibase;
+invalid counts, ambiguous order or non-monotonic timestamps block execution and print
+the recorded history. See [rollback preflight and diagnostics](rollback-verification.md).
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
 
