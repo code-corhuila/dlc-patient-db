@@ -26,6 +26,9 @@ deactivation, HTTP replay handling, inbox consumer, broker relay and seeds remai
 Explicit least-privilege runtime grants are included; see [runtime permissions](runtime-permissions.md).
 No clinical history, credentials, appointment or financial data belongs here.
 
+Ordered patient pages and the clarified name/document search have query indexes;
+see [query shapes, prerequisites and limits](query-indexes.md).
+
 ## Layout
 
 - `01_ddl/`: schema definitions; foreign keys will follow table creation.

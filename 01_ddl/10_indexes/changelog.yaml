@@ -90,3 +90,18 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/10_indexes/007_deactivation_operations.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-indexes-008
+      author: DanielPerez1822
+      labels: "query-indexes,ddl,indexes"
+      comment: "Stable patient pages and approved name/document literal substring search."
+      runInTransaction: true
+      changes:
+        - sqlFile:
+            path: 008_patients_query_indexes.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/10_indexes/008_patients_query_indexes.rollback.sql
+            relativeToChangelogFile: true
