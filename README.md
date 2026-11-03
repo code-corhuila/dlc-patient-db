@@ -90,6 +90,12 @@ inspect host/database clock synchronization if this guard fails.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
 
+## Backup and restore
+
+Backup/restore verification uses a separate disposable database and authenticated runtime;
+see [recovery procedure and evidence limits](backup-restore.md). Run
+`python -B tooling/verify_migrations.py --environment=dev --backup-restore` with Docker.
+
 ## Contribution
 
 Use child branches and PRs; never commit directly to `develop`, `qa` or `main`.
