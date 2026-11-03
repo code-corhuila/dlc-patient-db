@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_SMOKE = False
 ENVIRONMENT = None
 BACKUP_RESTORE = False
+SYNTHETIC_SEEDS = False
 
 
 class MigrationRebuildTest(unittest.TestCase):
@@ -191,9 +192,15 @@ class MigrationRebuildTest(unittest.TestCase):
                 'b1000000-0000-4000-8000-000000000011'), 'uk_deactivation_operations_request')
             self.assertEqual(sql("SELECT count(*) FROM patients.deactivation_operations"), "1")
 
-        def migrate(*args, check=True):
+        def migrate(*args, check=True, include_seeds=False, direct=False):
+            if not include_seeds and args[0] in ("update", "update-count"):
+                filtered = any(arg.startswith("--label-filter=") for arg in args)
+                args = tuple(arg + " and !synthetic-seeds" if arg.startswith("--label-filter=") else arg for arg in args)
+                if not filtered:
+                    args += ("--label-filter=!synthetic-seeds",)
             print("Liquibase: " + " ".join(args), flush=True)
-            return run("docker", "compose", "-p", network, "-f", str(compose),
+            runner = ROOT / "deploy/compose.yml" if direct else compose
+            return run("docker", "compose", "-p", network, "-f", str(runner),
                        "run", "--rm", "-v", f"{snapshot}:/workspace:ro", "patients-db-migrate", *args,
                        check=check, return_result=not check)
 
@@ -211,7 +218,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 sql("ALTER ROLE patients_runtime NOCREATEROLE")
             sql("ALTER ROLE patients_migrator PASSWORD '" + env["PG_OWNER_TEST_PASSWORD"] + "'; "
                 "ALTER ROLE patients_runtime PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
-            if BACKUP_RESTORE:
+            if BACKUP_RESTORE or SYNTHETIC_SEEDS:
                 migrate("update-count", "--count=1")
                 sql_script(bootstrap_sql)
                 migrate("update")
@@ -370,6 +377,74 @@ class MigrationRebuildTest(unittest.TestCase):
         def schema_count():
             return sql("SELECT count(*) FROM pg_namespace WHERE nspname = 'patients'")
 
+        def synthetic_seed_checks():
+            seed_id = "patients-dml-synthetic-001"
+            history = "SELECT id,author,filename,md5sum,dateexecuted,orderexecuted FROM public.databasechangelog_patients"
+            previous = sql(history + " ORDER BY orderexecuted")
+            for extra in ((), ("--contexts=dev,prod",)):
+                migrate("update", *extra, include_seeds=True, direct=True)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
+                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "0")
+            migrate("update", include_seeds=True)
+            expected = "34" if ENVIRONMENT == "prod" else "35"
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
+            if ENVIRONMENT == "prod":
+                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "0")
+                self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contacts"), "0")
+            else:
+                runtime_sql("BEGIN;\n" + (ROOT / "tooling/tests/synthetic_seeds.sql").read_text())
+                data = ("SELECT jsonb_build_object('profiles',(SELECT jsonb_agg(to_jsonb(p) ORDER BY patient_id) "
+                    "FROM patients.patients p),'contacts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY emergency_contact_id) "
+                    "FROM patients.emergency_contacts c))")
+                recorded = sql(history + " ORDER BY orderexecuted")
+                seeded = sql(data)
+                migrate("update", include_seeds=True)
+                self.assertEqual(sql(data), seeded)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
+                sql_script(support + "SELECT pg_temp.register_patient(90,'CC','SEED-UNRELATED'); "
+                    "INSERT INTO patients.emergency_contacts VALUES ('20000000-0000-4000-8000-000000000090',"
+                    "'00000000-0000-4000-8000-000000000090','Synthetic Other','Relative','3000000000');")
+                unrelated = ("SELECT to_jsonb(p),to_jsonb(c) FROM patients.patients p "
+                    "JOIN patients.emergency_contacts c USING(patient_id) "
+                    "WHERE patient_id='00000000-0000-4000-8000-000000000090'")
+                other = sql(unrelated)
+                seeded = sql(data)
+                for change, restore in (
+                    ("UPDATE patients.emergency_contacts SET name='Edited' WHERE emergency_contact_id="
+                        "'f2100000-0000-4000-8000-000000000001'",
+                     "UPDATE patients.emergency_contacts SET name='Synthetic Contact One' WHERE emergency_contact_id="
+                        "'f2100000-0000-4000-8000-000000000001'"),
+                    ("UPDATE patients.patients SET address='Edited' WHERE patient_id='f2000000-0000-4000-8000-000000000002'",
+                     "UPDATE patients.patients SET address=NULL WHERE patient_id='f2000000-0000-4000-8000-000000000002'"),
+                    ("INSERT INTO patients.emergency_contacts VALUES ('20000000-0000-4000-8000-000000000092',"
+                        "'f2000000-0000-4000-8000-000000000001','Synthetic New Reference','Relative','3000000000')",
+                     "DELETE FROM patients.emergency_contacts WHERE emergency_contact_id='20000000-0000-4000-8000-000000000092'")):
+                    sql(change)
+                    changed = sql(data)
+                    rejected = migrate("rollback-count", "--count=1", include_seeds=True, check=False)
+                    self.assertNotEqual(rejected.returncode, 0, "Rollback erased an evolved fixture")
+                    self.assertEqual(sql(data), changed)
+                    self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
+                    sql(restore)
+                migrate("rollback-count", "--count=1", include_seeds=True)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
+                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "1")
+                self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contacts"), "1")
+                self.assertEqual(sql(unrelated), other)
+                sql_script(support + "SELECT pg_temp.register_patient(91,'CC','SYNTHETIC-PAT-002');")
+                collision = sql(data)
+                rejected = migrate("update", include_seeds=True, check=False)
+                self.assertNotEqual(rejected.returncode, 0, "Seed overwrote an existing document")
+                self.assertIn("uk_patients_document", rejected.stdout + rejected.stderr)
+                self.assertEqual(sql(data), collision)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
+                sql("DELETE FROM patients.patients WHERE patient_id='00000000-0000-4000-8000-000000000091'")
+                migrate("update", include_seeds=True)
+                self.assertEqual(sql(data), seeded)
+            self.assertEqual(sql(history + f" WHERE id<>'{seed_id}' ORDER BY orderexecuted"), previous)
+            self.assertEqual(sql("SELECT id FROM bootstrap_probe.marker"), "1")
+            print("Synthetic seeds PASS: " + ENVIRONMENT, flush=True)
+
         config = json.loads(run("docker", "compose", "-f", str(compose),
                                 "config", "--format", "json"))
         self.assertEqual(set(config["services"]), {"patients-db-migrate"})
@@ -401,6 +476,8 @@ class MigrationRebuildTest(unittest.TestCase):
                 environment_checks()
                 if BACKUP_RESTORE:
                     backup_restore_checks()
+                if SYNTHETIC_SEEDS:
+                    synthetic_seed_checks()
                 return
             sql("CREATE ROLE patients_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
                 "NOREPLICATION NOBYPASSRLS PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
@@ -607,6 +684,9 @@ class MigrationRebuildTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    SYNTHETIC_SEEDS = "--synthetic-seeds" in sys.argv
+    if SYNTHETIC_SEEDS:
+        sys.argv.remove("--synthetic-seeds")
     BACKUP_RESTORE = "--backup-restore" in sys.argv
     if BACKUP_RESTORE:
         sys.argv.remove("--backup-restore")
@@ -618,4 +698,6 @@ if __name__ == "__main__":
         sys.argv.remove("--environment=" + ENVIRONMENT)
     if BACKUP_RESTORE and (ENVIRONMENT != "dev" or SCHEMA_SMOKE):
         raise SystemExit("--backup-restore requires --environment=dev; it uses disposable databases only")
+    if SYNTHETIC_SEEDS and (ENVIRONMENT not in ("dev", "qa", "prod") or SCHEMA_SMOKE or BACKUP_RESTORE):
+        raise SystemExit("--synthetic-seeds requires one environment and cannot combine with other focused modes")
     unittest.main(verbosity=2)
