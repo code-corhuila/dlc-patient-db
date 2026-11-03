@@ -1,0 +1,18 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-dml-synthetic-001
+      author: DanielPerez1822
+      context: "(@dev or @qa) and !prod"
+      labels: "synthetic-seeds,dml"
+      comment: "Explicit non-production synthetic snapshots; no lifecycle events."
+      runInTransaction: true
+      changes:
+        - sqlFile:
+            path: 001_synthetic_patients.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/02_dml/00_inserts/001_synthetic_patients.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false

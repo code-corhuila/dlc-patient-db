@@ -1,5 +1,7 @@
 """Rebuild only Patients in a disposable PostgreSQL database; requires Docker."""
 
+import difflib
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -15,6 +17,8 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_SMOKE = False
 ENVIRONMENT = None
+BACKUP_RESTORE = False
+SYNTHETIC_SEEDS = False
 
 
 class MigrationRebuildTest(unittest.TestCase):
@@ -188,9 +192,15 @@ class MigrationRebuildTest(unittest.TestCase):
                 'b1000000-0000-4000-8000-000000000011'), 'uk_deactivation_operations_request')
             self.assertEqual(sql("SELECT count(*) FROM patients.deactivation_operations"), "1")
 
-        def migrate(*args, check=True):
+        def migrate(*args, check=True, include_seeds=False, direct=False):
+            if not include_seeds and args[0] in ("update", "update-count"):
+                filtered = any(arg.startswith("--label-filter=") for arg in args)
+                args = tuple(arg + " and !synthetic-seeds" if arg.startswith("--label-filter=") else arg for arg in args)
+                if not filtered:
+                    args += ("--label-filter=!synthetic-seeds",)
             print("Liquibase: " + " ".join(args), flush=True)
-            return run("docker", "compose", "-p", network, "-f", str(compose),
+            runner = ROOT / "deploy/compose.yml" if direct else compose
+            return run("docker", "compose", "-p", network, "-f", str(runner),
                        "run", "--rm", "-v", f"{snapshot}:/workspace:ro", "patients-db-migrate", *args,
                        check=check, return_result=not check)
 
@@ -208,6 +218,12 @@ class MigrationRebuildTest(unittest.TestCase):
                 sql("ALTER ROLE patients_runtime NOCREATEROLE")
             sql("ALTER ROLE patients_migrator PASSWORD '" + env["PG_OWNER_TEST_PASSWORD"] + "'; "
                 "ALTER ROLE patients_runtime PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
+            if BACKUP_RESTORE or SYNTHETIC_SEEDS:
+                migrate("update-count", "--count=1")
+                sql_script(bootstrap_sql)
+                migrate("update")
+                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "34")
+                return
             for bad_environment in ("staging", ""):
                 env["PG_ENVIRONMENT"] = bad_environment
                 try:
@@ -281,8 +297,153 @@ class MigrationRebuildTest(unittest.TestCase):
             return sql("SELECT count(*) FROM pg_indexes WHERE schemaname='patients' AND indexname IN "
                 "('idx_patients_created_at_patient_id','idx_patients_status_created_at_patient_id','idx_patients_name_document_search')")
 
+        def backup_restore_checks():
+            source = env["PG_DATABASE"]
+            recovered = "patients_recovered"
+            definitions = {}
+
+            def recovery_sql(database, statement):
+                return run("docker", "exec", container, "psql", "-U", "postgres", "-d", database,
+                    "-v", "ON_ERROR_STOP=1", "-Atc", statement)
+
+            def fingerprint(database):
+                tables = recovery_sql(database, "SELECT schemaname,tablename FROM pg_tables "
+                    "WHERE schemaname NOT IN ('pg_catalog','information_schema') ORDER BY 1,2")
+                rows = {}
+                for table in tables.splitlines():
+                    schema, name = table.split('|')
+                    quoted = '.'.join('"' + part.replace('"', '""') + '"' for part in (schema, name))
+                    rows[table] = recovery_sql(database, "SELECT count(*),md5(coalesce("
+                        "string_agg(to_jsonb(t)::text,E'\\n' ORDER BY to_jsonb(t)::text),'')) FROM " + quoted + " t")
+                definition = run("docker", "exec", container, "pg_dump", "-U", "postgres",
+                    "-d", database, "--schema-only")
+                definitions[database] = definition
+                return hashlib.sha256(definition.encode()).hexdigest(), rows
+
+            sql_script("BEGIN;\n" + support + inbox_support +
+                (ROOT / "tooling/tests/backup_restore_fixture.sql").read_text())
+            before = fingerprint(source)
+            self.assertEqual(len(before[1]), 10, "Expected seven Patients tables, two history tables and foreign marker")
+            self.assertTrue(all(int(value.split('|')[0]) > 0 for value in before[1].values()))
+            started = time.monotonic()
+            # Parse the independent plain schema export once, like the archive restore.
+            # PostgreSQL flattens nested CHECK conjunctions during that round trip.
+            reference = "patients_recovery_schema"
+            run("docker", "exec", container, "createdb", "-U", "postgres", "-T", "template0", reference)
+            run("docker", "exec", "-i", container, "psql", "-U", "postgres", "-d", reference,
+                "-v", "ON_ERROR_STOP=1", input_text=definitions[source])
+            expected = (fingerprint(reference)[0], before[1])
+            archive = "/tmp/patients-recovery.dump"
+            run("docker", "exec", container, "pg_dump", "-U", "postgres", "-d", source,
+                "--format=custom", "--file=" + archive)
+            archive_digest = run("docker", "exec", container, "sha256sum", archive)
+            run("docker", "exec", container, "pg_restore", "--list", archive)
+            # Files remain inside the disposable container; no binary shell pipeline on Windows.
+            run("docker", "exec", container, "sh", "-ec",
+                "head -c 128 /tmp/patients-recovery.dump > /tmp/patients-recovery-corrupt.dump")
+            failed = "patients_recovery_rejected"
+            run("docker", "exec", container, "createdb", "-U", "postgres", "-T", "template0", failed)
+            empty = fingerprint(failed)
+            rejected = run("docker", "exec", container, "pg_restore", "-U", "postgres", "-d", failed,
+                "--exit-on-error", "--single-transaction", "/tmp/patients-recovery-corrupt.dump",
+                check=False, return_result=True)
+            self.assertNotEqual(rejected.returncode, 0, "Damaged archive was accepted")
+            self.assertEqual(fingerprint(failed), empty, "Damaged restore changed the target")
+            run("docker", "exec", container, "createdb", "-U", "postgres", "-T", "template0", recovered)
+            run("docker", "exec", container, "pg_restore", "-U", "postgres", "-d", recovered,
+                "--exit-on-error", "--single-transaction", archive)
+            restored = fingerprint(recovered)
+            if restored != expected:
+                print('\n'.join(difflib.unified_diff(definitions[reference].splitlines(),
+                    definitions[recovered].splitlines(), fromfile="reference schema", tofile="restored schema")), flush=True)
+            self.assertEqual(restored, expected, "Restored schema, ACLs or table contents differ")
+            recovery_sql(recovered, "GRANT CONNECT ON DATABASE patients_recovered TO patients_migrator,patients_runtime")
+            try:
+                env["PG_DATABASE"] = recovered
+                migrate("validate")
+                migrate("update")
+                history = role_sql("patients_migrator", env["PG_OWNER_TEST_PASSWORD"],
+                    "SELECT count(*) FROM public.databasechangelog_patients;")
+                self.assertIn("34", history)
+                role_sql("patients_runtime", env["PG_RUNTIME_TEST_PASSWORD"], "BEGIN;\n" + support +
+                    (ROOT / "tooling/tests/backup_restore_permissions.sql").read_text())
+            finally:
+                env["PG_DATABASE"] = source
+            self.assertEqual(fingerprint(recovered), expected, "Verification changed restored data or history")
+            self.assertEqual(fingerprint(source), before, "Recovery changed the source database")
+            self.assertEqual(run("docker", "exec", container, "sha256sum", archive), archive_digest)
+            print(f"Backup/restore PASS: complete copy, runtime, unchanged history; drill {time.monotonic()-started:.1f}s", flush=True)
+
         def schema_count():
             return sql("SELECT count(*) FROM pg_namespace WHERE nspname = 'patients'")
+
+        def synthetic_seed_checks():
+            seed_id = "patients-dml-synthetic-001"
+            history = "SELECT id,author,filename,md5sum,dateexecuted,orderexecuted FROM public.databasechangelog_patients"
+            previous = sql(history + " ORDER BY orderexecuted")
+            for extra in ((), ("--contexts=dev,prod",)):
+                migrate("update", *extra, include_seeds=True, direct=True)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
+                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "0")
+            migrate("update", include_seeds=True)
+            expected = "34" if ENVIRONMENT == "prod" else "35"
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
+            if ENVIRONMENT == "prod":
+                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "0")
+                self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contacts"), "0")
+            else:
+                runtime_sql("BEGIN;\n" + (ROOT / "tooling/tests/synthetic_seeds.sql").read_text())
+                data = ("SELECT jsonb_build_object('profiles',(SELECT jsonb_agg(to_jsonb(p) ORDER BY patient_id) "
+                    "FROM patients.patients p),'contacts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY emergency_contact_id) "
+                    "FROM patients.emergency_contacts c))")
+                recorded = sql(history + " ORDER BY orderexecuted")
+                seeded = sql(data)
+                migrate("update", include_seeds=True)
+                self.assertEqual(sql(data), seeded)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
+                sql_script(support + "SELECT pg_temp.register_patient(90,'CC','SEED-UNRELATED'); "
+                    "INSERT INTO patients.emergency_contacts VALUES ('20000000-0000-4000-8000-000000000090',"
+                    "'00000000-0000-4000-8000-000000000090','Synthetic Other','Relative','3000000000');")
+                unrelated = ("SELECT to_jsonb(p),to_jsonb(c) FROM patients.patients p "
+                    "JOIN patients.emergency_contacts c USING(patient_id) "
+                    "WHERE patient_id='00000000-0000-4000-8000-000000000090'")
+                other = sql(unrelated)
+                seeded = sql(data)
+                for change, restore in (
+                    ("UPDATE patients.emergency_contacts SET name='Edited' WHERE emergency_contact_id="
+                        "'f2100000-0000-4000-8000-000000000001'",
+                     "UPDATE patients.emergency_contacts SET name='Synthetic Contact One' WHERE emergency_contact_id="
+                        "'f2100000-0000-4000-8000-000000000001'"),
+                    ("UPDATE patients.patients SET address='Edited' WHERE patient_id='f2000000-0000-4000-8000-000000000002'",
+                     "UPDATE patients.patients SET address=NULL WHERE patient_id='f2000000-0000-4000-8000-000000000002'"),
+                    ("INSERT INTO patients.emergency_contacts VALUES ('20000000-0000-4000-8000-000000000092',"
+                        "'f2000000-0000-4000-8000-000000000001','Synthetic New Reference','Relative','3000000000')",
+                     "DELETE FROM patients.emergency_contacts WHERE emergency_contact_id='20000000-0000-4000-8000-000000000092'")):
+                    sql(change)
+                    changed = sql(data)
+                    rejected = migrate("rollback-count", "--count=1", include_seeds=True, check=False)
+                    self.assertNotEqual(rejected.returncode, 0, "Rollback erased an evolved fixture")
+                    self.assertEqual(sql(data), changed)
+                    self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
+                    sql(restore)
+                migrate("rollback-count", "--count=1", include_seeds=True)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
+                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "1")
+                self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contacts"), "1")
+                self.assertEqual(sql(unrelated), other)
+                sql_script(support + "SELECT pg_temp.register_patient(91,'CC','SYNTHETIC-PAT-002');")
+                collision = sql(data)
+                rejected = migrate("update", include_seeds=True, check=False)
+                self.assertNotEqual(rejected.returncode, 0, "Seed overwrote an existing document")
+                self.assertIn("uk_patients_document", rejected.stdout + rejected.stderr)
+                self.assertEqual(sql(data), collision)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
+                sql("DELETE FROM patients.patients WHERE patient_id='00000000-0000-4000-8000-000000000091'")
+                migrate("update", include_seeds=True)
+                self.assertEqual(sql(data), seeded)
+            self.assertEqual(sql(history + f" WHERE id<>'{seed_id}' ORDER BY orderexecuted"), previous)
+            self.assertEqual(sql("SELECT id FROM bootstrap_probe.marker"), "1")
+            print("Synthetic seeds PASS: " + ENVIRONMENT, flush=True)
 
         config = json.loads(run("docker", "compose", "-f", str(compose),
                                 "config", "--format", "json"))
@@ -313,6 +474,10 @@ class MigrationRebuildTest(unittest.TestCase):
             sql("CREATE SCHEMA query_extensions; CREATE EXTENSION pg_trgm WITH SCHEMA query_extensions")
             if ENVIRONMENT:
                 environment_checks()
+                if BACKUP_RESTORE:
+                    backup_restore_checks()
+                if SYNTHETIC_SEEDS:
+                    synthetic_seed_checks()
                 return
             sql("CREATE ROLE patients_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
                 "NOREPLICATION NOBYPASSRLS PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
@@ -519,10 +684,20 @@ class MigrationRebuildTest(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    SYNTHETIC_SEEDS = "--synthetic-seeds" in sys.argv
+    if SYNTHETIC_SEEDS:
+        sys.argv.remove("--synthetic-seeds")
+    BACKUP_RESTORE = "--backup-restore" in sys.argv
+    if BACKUP_RESTORE:
+        sys.argv.remove("--backup-restore")
     SCHEMA_SMOKE = "--schema-smoke" in sys.argv
     if SCHEMA_SMOKE:
         sys.argv.remove("--schema-smoke")
     ENVIRONMENT = next((arg.split("=", 1)[1] for arg in sys.argv if arg.startswith("--environment=")), None)
     if ENVIRONMENT is not None:
         sys.argv.remove("--environment=" + ENVIRONMENT)
+    if BACKUP_RESTORE and (ENVIRONMENT != "dev" or SCHEMA_SMOKE):
+        raise SystemExit("--backup-restore requires --environment=dev; it uses disposable databases only")
+    if SYNTHETIC_SEEDS and (ENVIRONMENT not in ("dev", "qa", "prod") or SCHEMA_SMOKE or BACKUP_RESTORE):
+        raise SystemExit("--synthetic-seeds requires one environment and cannot combine with other focused modes")
     unittest.main(verbosity=2)
