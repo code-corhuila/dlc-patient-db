@@ -17,6 +17,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Verify rollback preflight regression cases
+        run: python -B -m unittest discover -s tooling -p test_rollback_verification.py -v
       - name: Verify Patients migrations against disposable PostgreSQL
         run: python -B tooling/verify_migrations.py
   environment-migrations:
