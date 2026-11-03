@@ -3,6 +3,16 @@
 Review date: 2026-11-02 (America/Bogota). Scope: dlc-patient-db, HU-PAT-001.
 **Decision: pending acceptance; not ready for promotion or operational release.**
 This is an evidence inventory and handoff, not reviewer approval or a new project policy.
+Scope clarification, 2026-11-03: the delivery is
+[DB issue #1](https://github.com/code-corhuila/dlc-patient-db/issues/1), contributing to
+[HU issue #53](https://github.com/code-corhuila/dlc-docs/issues/53).
+Use [the issue-specific matrix](acceptance-evidence.md) for persistence acceptance.
+API, portal and technology-wide provisioning below are downstream delivery/release
+dependencies, not missing implementation in this DB issue. They still apply to HU acceptance.
+No completion percentage for this issue is established by the broader inventory.
+Fresh final validation on 2026-11-03: all nine executions PASS (rollback unit suite
+plus all eight Docker workflow scenarios). See [results, logs and SHA-256 inventory](final-validation.md).
+This supersedes the earlier execution gaps below; remote CI and acceptance remain separate.
 
 ## Revisions and authority
 
@@ -120,7 +130,9 @@ tests now pass (GREEN), requiring zero rollback callbacks on rejection.
 Full isolated Docker verification: PASS, 1295.912s, including all 34 base changesets,
 historical increments, concurrency, full rollback and rebuild. Seed/dev verification
 also passed in 552.283s, including protected SQL failures and valid rollback/reapply.
-Record the reviewed fix SHA and retain output; the earlier
+The fix is commit 3e9d698f5b7af87f0b480b3b4931a0904827243e, merged through
+[PR #16](https://github.com/code-corhuila/dlc-patient-db/pull/16) into
+4297e928f6fecbf11edf75fbddf4afc3a7500a67; retain output and the review decision. The earlier
 failed results remain historical evidence. No applied SQL or history dates were changed.
 This successful run does not repair clocks, prove permanent stability or remove release gates.
 
@@ -133,6 +145,7 @@ when collecting a local review bundle to avoid resource contention.
 ```sh
 git rev-parse HEAD
 git status --short
+python -B -m unittest discover -s tooling -p test_rollback_verification.py -v
 python -B tooling/verify_migrations.py
 python -B tooling/verify_migrations.py --environment=dev
 python -B tooling/verify_migrations.py --environment=qa
@@ -161,13 +174,13 @@ must retain RED -> GREEN -> REFACTOR evidence. Do not manufacture RED tests for 
 | ID | Responsible role | Concrete next evidence |
 |---|---|---|
 | R-01 | Repository/Actions administrator and DB owner | Address the owner-reported Actions-budget blocker and obtain all eight successful jobs for the reviewed revision, or document a project-approved alternative; retain the failed-run trail |
-| R-02 | Patients/Docs owner and required Docs reviewer | Reconcile/review the canonical search clarification, replace #NN with a real issue, link the evidence matrix and refresh the dated repository-evidence register via docs/* -> main |
+| R-02 | Patients/Docs owner and required Docs reviewer | DB issue #1 is identified in acceptance-evidence.md; reconcile/review canonical search, link the evidence matrix and refresh the dated repository-evidence register via docs/* -> main; old PR text still needs its author's correction |
 | R-03 | DB and shared PostgreSQL owners | Coordinate actual include order/changeset identity against all owners' changelogs and deployed history; document ownership transitions without editing applied migrations |
 | R-04 | Infrastructure operator and DB owner | Bind isolated endpoints/secrets, provision compatible pg_trgm and migrator namespace access, seal CREATE, verify effective grants and indexes, record migration/restore observations |
 | R-05 | Patients API owner and affected service owners | Implement and verify the application/authorization/HTTP/event/guard behavior listed above; register linked issues without marking missing implementation N/A |
 | R-06 | Tech Lead/Docs owner | Resolve authoritative branching-policy qa/* versus git-conventions promotion/* discrepancy before promotion; preserve mandatory cherry-pick -x provenance |
-| R-07 | Independent team reviewer / authorized board maintainer | Record explicit DoD decision for the immutable revision and evidence; only then may the authorized maintainer update Done |
-| R-08 | DB owner and local/infrastructure operator | Resolve the local incremental rollback failure and non-monotonic recorded timestamps; retain the offending history and a successful full upgrade/rollback/rebuild run after diagnosis |
+| R-07 | Independent team reviewer / authorized board maintainer | Link existing PR approvals to their reviewed SHAs/evidence and record scoped DB acceptance; whole-HU Done remains a separate decision |
+| R-08 | DB owner and local/infrastructure operator | Preflight protection and a successful isolated full run are delivered in PR #16; permanent clock stability/root cause remains unproven and must be investigated if chronology fails again |
 
 No High/Critical security release block can be waived. Security findings, application
 compatibility, real recovery and target-environment verification remain required before

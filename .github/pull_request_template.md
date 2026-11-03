@@ -1,7 +1,8 @@
 ## User story
 
-Refs: code-corhuila/dlc-docs#NN (replace with the actual issue)
-Requirement: HU-PAT-001; state the implemented increment and remaining criteria.
+Refs: code-corhuila/dlc-patient-db#1
+Related HU: code-corhuila/dlc-docs#53 — HU-PAT-001
+State this PR's persistence increment; replace these references if another issue applies.
 
 ## What changes and why
 
@@ -11,6 +12,7 @@ Link the reviewed revision, RED/GREEN evidence and CI result.
 Map affected acceptance criteria to executed checks; declare pending checks.
 
 Use [the DB readiness matrix](../readiness.md) as a starting inventory, not approval.
+For issue #1, use [the scoped acceptance evidence](../acceptance-evidence.md).
 Replace every placeholder with this PR's real issue, immutable revision and evidence.
 
 | Criterion / DoD item | Source and Docs revisions | Command / CI job / artifact | Result and remaining scope |
@@ -20,8 +22,10 @@ Replace every placeholder with this PR's real issue, immutable revision and evid
 ## Acceptance and handoff
 
 - Prior failed CI/run links and unresolved findings:
-- Pending API/provider, shared-sequence and target-environment evidence:
-- Independent reviewer, reviewed SHA and explicit DoD decision: pending.
+- Pending evidence for this DB issue:
+- Downstream API/provider, shared-sequence and target-environment handoff:
+- Independent reviewer, reviewed SHA and explicit scoped acceptance decision:
+- CI result, or recorded project decision on the Actions-budget blocker:
 
 Green CI or merge does not grant DoD acceptance. New commits require renewed review.
 

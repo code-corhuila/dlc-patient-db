@@ -16,6 +16,9 @@ server time, field names and a required deactivation reason. See [data dictionar
 This is an increment of HU-PAT-001, not complete functional acceptance.
 The [readiness review](readiness.md) maps implemented checks, revision-linked evidence
 and open acceptance/deployment work; it is not a release approval.
+Delivery issue: [dlc-patient-db#1](https://github.com/code-corhuila/dlc-patient-db/issues/1),
+with [scoped acceptance evidence](acceptance-evidence.md). API, portal and general
+infrastructure provisioning are separate deliveries; this issue does not complete the HU.
 Completed retry outcomes are stored by principal, operation, resource and UUID key,
 with an immutable request hash/response and at least seven days of retention.
 The local outbox stores patient lifecycle events and their publication metadata,
