@@ -1,0 +1,3 @@
+DROP INDEX patients.idx_patients_name_document_search RESTRICT;
+DROP INDEX patients.idx_patients_status_created_at_patient_id RESTRICT;
+DROP INDEX patients.idx_patients_created_at_patient_id RESTRICT;
