@@ -9,7 +9,7 @@ This is an evidence inventory and handoff, not reviewer approval or a new projec
 DB baseline: [91ed1218314d095b1e19883bf67a41655427d670](https://github.com/code-corhuila/dlc-patient-db/commit/91ed1218314d095b1e19883bf67a41655427d670),
 merged from [PR #14](https://github.com/code-corhuila/dlc-patient-db/pull/14).
 Its tree matches seed head aa04bae8d3c10e98df5d9b21e92eed0d5c29cf31.
-This branch adds review documentation only; its eventual commit must be reviewed separately.
+The readiness-review increment added documentation only; subsequent fixes require separate review.
 
 The inspected dlc-docs baseline is 31fb316d8209fbf1838feea9ecf0192c4b551585:
 
@@ -81,8 +81,8 @@ success does not replace the required CI gate or authorize acceptance.
 
 ### Local rollback diagnostic
 
-The executable/migration/deployment tree is unchanged from the pinned DB baseline;
-the working diff contains review documentation only. The following read-only query
+During that review the executable/migration/deployment tree matched the pinned DB baseline;
+its working diff contained documentation only. The following read-only query
 was executed in the separate prod-labelled disposable fixture, not a real environment:
 
 ```sql
@@ -110,6 +110,19 @@ so the precise cause of that failure is not established by these separate rows.
 Investigate host/VM/database clock behavior and timestamp recording, retain a fresh
 failing history and rerun sequentially after correcting the cause. Do not rewrite
 history dates, edit applied SQL, hide missing-index errors or treat a repeat as acceptance.
+
+### Rollback verification follow-up — 2026-11-03
+
+The subsequent fix adds [preflight regression tests and diagnostics](rollback-verification.md)
+before every incremental/seed/full reversal, replacing the final-only guard.
+TDD: the callback-only scaffold allowed unsafe histories (RED); all six regression
+tests now pass (GREEN), requiring zero rollback callbacks on rejection.
+Full isolated Docker verification: PASS, 1295.912s, including all 34 base changesets,
+historical increments, concurrency, full rollback and rebuild. Seed/dev verification
+also passed in 552.283s, including protected SQL failures and valid rollback/reapply.
+Record the reviewed fix SHA and retain output; the earlier
+failed results remain historical evidence. No applied SQL or history dates were changed.
+This successful run does not repair clocks, prove permanent stability or remove release gates.
 
 ## Reproduce and attach evidence
 

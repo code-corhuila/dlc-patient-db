@@ -13,6 +13,8 @@ import time
 import unittest
 import uuid
 
+from rollback_verification import RollbackPreflightError, run_rollback
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_SMOKE = False
@@ -200,9 +202,23 @@ class MigrationRebuildTest(unittest.TestCase):
                     args += ("--label-filter=!synthetic-seeds",)
             print("Liquibase: " + " ".join(args), flush=True)
             runner = ROOT / "deploy/compose.yml" if direct else compose
-            return run("docker", "compose", "-p", network, "-f", str(runner),
-                       "run", "--rm", "-v", f"{snapshot}:/workspace:ro", "patients-db-migrate", *args,
-                       check=check, return_result=not check)
+            def execute():
+                return run("docker", "compose", "-p", network, "-f", str(runner),
+                           "run", "--rm", "-v", f"{snapshot}:/workspace:ro", "patients-db-migrate", *args,
+                           check=check, return_result=not check)
+            if args[0] == "rollback-count":
+                recorded = json.loads(sql("SELECT coalesce(json_agg(h ORDER BY orderexecuted),'[]'::json) FROM "
+                    "(SELECT id,author,filename,orderexecuted,dateexecuted FROM public.databasechangelog_patients) h"))
+                print("Rollback preflight history: " + json.dumps(recorded), flush=True)
+                try:
+                    count = int(next(arg.split("=", 1)[1] for arg in args if arg.startswith("--count=")))
+                except (ValueError, StopIteration):
+                    self.fail("Rollback requires an explicit integer --count")
+                try:
+                    return run_rollback(recorded, count, execute)
+                except RollbackPreflightError as error:
+                    self.fail("Rollback blocked before invoking Liquibase: " + str(error))
+            return execute()
 
         def environment_checks():
             bootstrap_sql = (ROOT / "deploy/bootstrap.sql").read_text()
@@ -656,12 +672,7 @@ class MigrationRebuildTest(unittest.TestCase):
             migrate("update")
             self.assertEqual(sql(f"SELECT id, author, md5sum, dateexecuted "
                                  f"FROM {history} ORDER BY orderexecuted"), recorded)
-            # Liquibase sorts rollback by DATEEXECUTED, then ORDEREXECUTED.
-            chronology = sql(f"SELECT count(*) FROM (SELECT dateexecuted, "
-                             f"lag(dateexecuted) OVER (ORDER BY orderexecuted) previous FROM {history}) h "
-                             "WHERE dateexecuted < previous")
-            print("Rollback history: " + sql(f"SELECT id,orderexecuted,dateexecuted FROM {history} ORDER BY dateexecuted,orderexecuted"), flush=True)
-            self.assertEqual(chronology, "0", "Non-monotonic migration clock; inspect host/database time before rollback")
+            # migrate preflights every rollback, including historical increments.
             count = sql(f"SELECT count(*) FROM {history}")
             migrate("rollback-count", "--count=" + count)
             self.assertEqual(schema_count(), "0")
