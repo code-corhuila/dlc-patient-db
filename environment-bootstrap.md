@@ -45,8 +45,9 @@ The ordinary full migration/rollback job remains separate and uses the administr
 fixture; environment checks do not claim non-superuser full rollback verification.
 
 The older deploy/compose.yml remains the disposable verifier's direct-credential runner.
-Use compose.environment.yml for owner-scoped deployment. Seeds are not introduced here;
-future seeds must be explicitly restricted to approved non-production contexts.
+Use compose.environment.yml for owner-scoped deployment. [Synthetic seeds](synthetic-seeds.md)
+require explicit dev/qa contexts and exclude prod. Their verifier runs separately.
+The [disposable backup/restore drill](backup-restore.md) is local recovery evidence.
 No real dev/qa/prod deployment, secret-manager integration, live ownership conversion
-or backup/restore execution is claimed. Deployment operator and infrastructure bindings
+or real-infrastructure restore is claimed. Deployment operator and infrastructure bindings
 must be recorded with the reviewed revision before acceptance.
