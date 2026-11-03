@@ -33,3 +33,13 @@ jobs:
           python-version: '3.12'
       - name: Verify owner bootstrap and migration in disposable PostgreSQL
         run: python -B tooling/verify_migrations.py --environment=${{ matrix.environment }}
+  backup-restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify complete disposable database backup and recovery
+        run: python -B tooling/verify_migrations.py --environment=dev --backup-restore
