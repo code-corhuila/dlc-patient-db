@@ -7,7 +7,7 @@ ADR-007 (Liquibase), ADR-008 (domain-owned migrations), `06-data/` and
 
 ## Current scope
 
-Includes the bootstrap and administrative `patients.patients` identity table,
+Includes the bootstrap and administrative `patients.patient` identity table,
 contract field limits, immutable identifier and normalized document uniqueness
 across active/inactive profiles. Emergency contacts support zero or more entries,
 contract field limits and an indexed local patient reference with restricted deletion.

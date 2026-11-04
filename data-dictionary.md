@@ -5,7 +5,7 @@ Canonical model and boundaries: [Patients data model](https://github.com/code-co
 and [HTTP contract](https://github.com/code-corhuila/dlc-docs/blob/main/07-api/contracts/openapi/patients-service.yaml).
 This dictionary maps the implemented storage increment; it does not replace dlc-docs.
 
-| Column in `patients.patients` | Type | Storage rule |
+| Column in `patients.patient` | Type | Storage rule |
 |---|---|---|
 | patient_id | uuid | Required primary key supplied by the API; immutable after insertion |
 | document_type | text | Required, nonblank, at most 30 characters |
@@ -22,12 +22,12 @@ This dictionary maps the implemented storage increment; it does not replace dlc-
 
 ## Emergency contacts — HU-PAT-001
 
-`patients.emergency_contacts` belongs to the same administrative aggregate.
+`patients.emergency_contact` belongs to the same administrative aggregate.
 
 | Column | Type | Storage rule |
 |---|---|---|
 | emergency_contact_id | uuid | Required primary key supplied by the API |
-| patient_id | uuid | Required local reference to patients.patients |
+| patient_id | uuid | Required local reference to patients.patient |
 | name | text | Required, nonblank, at most 255 characters |
 | relationship | text | Required, nonblank, at most 80 characters; no closed catalog is specified |
 | phone | text | Required, nonblank, at most 40 characters; semantic phone validation belongs to API |
@@ -69,7 +69,7 @@ and no purge is introduced.
 
 This storage mapping implements the scope/retention rules in
 [API design decisions](https://github.com/code-corhuila/dlc-docs/blob/main/07-api/design-decisions.md#idempotency-and-optimistic-updates).
-`patients.idempotency_records` stores completed outcomes, not pending guard intents.
+`patients.idempotency_record` stores completed outcomes, not pending guard intents.
 
 | Column | Type | Storage rule |
 |---|---|---|
@@ -96,7 +96,7 @@ Expiration neither releases coordination guards nor removes permanent document u
 
 ## Outbox events — HU-PAT-001
 
-`patients.outbox_events` maps the [Patients event contracts](https://github.com/code-corhuila/dlc-docs/blob/main/09-microservices/services/03-patients-service/events.md).
+`patients.outbox_event` maps the [Patients event contracts](https://github.com/code-corhuila/dlc-docs/blob/main/09-microservices/services/03-patients-service/events.md).
 
 | Columns | Storage rule |
 |---|---|
@@ -121,7 +121,7 @@ profile/audit/outbox orchestration remain producer/application work. The publish
 mark PUBLISHED only after broker confirmation; a crash may cause same-event redelivery.
 Consumers still require Inbox deduplication, and current patient/guard contracts remain authoritative.
 
-## patients.inbox_events
+## patients.inbox_event
 
 Storage for ClinicalAssignmentStarted/ClinicalAssignmentEnded v1 from appointments-service,
 following `03-patients-service/events.md`, `event-ordering.md` and their canonical schemas.
@@ -169,3 +169,30 @@ protect ordinary DML but do not replace restrictions on DDL-capable migration cr
 SQL constraints complement application/domain validation; they do not authorize access.
 
 Explicit database permissions and their provisioning boundaries are described in [runtime permissions](runtime-permissions.md).
+
+## patients.deactivation_operation
+
+Implements caller-side intent storage from ADR-017 and the Patients data model.
+
+| Fields | Contract |
+|---|---|
+| operation_id / patient_id | Stable operation UUID / restricted local patient FK |
+| actor_id / idempotency_key | Required UUIDs; request uniqueness is actor + patient + key for deactivation |
+| expected_version / reason | Immutable request values: positive profile version and nonblank reason, 1-1000 characters |
+| guard_id / guard_token_hash | Both absent before acquisition; external guard UUID and lowercase SHA-256 fingerprint together afterward |
+| outcome | Local PENDING, FINALIZED or ABORTED; starts PENDING, terminal decisions cannot change |
+| operation_version | Server-incremented optimistic revision, separate from expected profile version |
+| created_at / updated_at / completed_at | Server instants; terminal completion is immutable even when proof rotates |
+
+Persist the intent before HTTP acquisition. A guard cannot be reassigned or shared by
+operations; its fingerprint can rotate, including after local completion, for ADR-017 recovery.
+A hash cannot reconstruct the token: reacquire with the same operationId and use the new
+opaque token only in the private resolution body. Never store/log the raw token here.
+FINALIZED requires a stored guard, but means local commit, not remote acknowledgement.
+The application must commit profile, audit, outbox and local FINALIZED atomically, compare
+operation_version on competing updates, and prove a non-retriable abort before ABORTED.
+Unknown outcomes stay PENDING; there is no time expiry or automatic release/deletion.
+SQL stores facts and supports transactions; it does not validate Appointments proofs,
+implement guard admission, authenticate staff or prove a distributed outcome. Remote
+resolution acknowledgement, reconciliation workers and provider/concurrency tests remain pending.
+Existing HTTP idempotency results remain separate; compare request values on key conflicts.
