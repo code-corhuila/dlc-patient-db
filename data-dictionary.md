@@ -174,6 +174,14 @@ Explicit database permissions and their provisioning boundaries are described in
 
 Implements caller-side intent storage from ADR-017 and the Patients data model.
 
+Deactivation is atomic at commit (PAT-004, data model): deferred constraint triggers
+`trg_patient_deactivation_proof` and `trg_deactivation_operation_proof` reject a transaction that
+moves a profile from ACTIVE to INACTIVE without its `DEACTIVATED` audit for the new version, a
+`PatientDeactivated` outbox event and a `FINALIZED` operation for the previous version, and one that
+finalizes an operation without that deactivated profile (`chk_patient_deactivation_proof`,
+`chk_deactivation_operation_proof`). The guard token hash stays writable after the local outcome
+because ADR-017 reconciliation stores the rotated token before resolving the guard.
+
 | Fields | Contract |
 |---|---|
 | operation_id / patient_id | Stable operation UUID / restricted local patient FK |

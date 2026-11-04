@@ -15,5 +15,8 @@ databaseChangeLog:
       file: ../03_dcl/02_roles/changelog.yaml
       relativeToChangelogFile: true
   - include:
+      file: ../01_ddl/12_invariants/changelog.yaml
+      relativeToChangelogFile: true
+  - include:
       file: ../02_dml/changelog.yaml
       relativeToChangelogFile: true
