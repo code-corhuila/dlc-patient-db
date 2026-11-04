@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-rename-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,naming,ddl,emergency-contacts,patient-audit,idempotency,outbox,inbox,deactivation-operations,query-indexes"
+      comment: "Norm 5.2.5: singular tables and chk_/idx_ names. Applied changesets are never edited (5.2.3), so the names change in a new migration."
+      changes:
+        - sqlFile:
+            path: 001_singular_names.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/11_rename/001_singular_names.rollback.sql
+            relativeToChangelogFile: true
