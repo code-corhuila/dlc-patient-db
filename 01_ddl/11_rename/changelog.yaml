@@ -12,3 +12,18 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/11_rename/001_singular_names.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-rename-002
+      author: DanielPerez1822
+      labels: "HU-PAT-001,naming,ddl,functions,emergency-contacts,patient-audit,idempotency,outbox,inbox,deactivation-operations,query-indexes"
+      comment: "Raise chk_ labels from the protection functions and name them after the singular tables."
+      changes:
+        - sqlFile:
+            path: 002_protection_functions.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/11_rename/002_protection_functions.rollback.sql
+            relativeToChangelogFile: true
+            splitStatements: false
