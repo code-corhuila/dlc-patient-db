@@ -47,6 +47,8 @@ see [query shapes, prerequisites and limits](query-indexes.md).
 - `changelog/changelog-master.yaml`: the single Liquibase entry point.
 - `deploy/compose.yml`: migration runner only; no database service or owned volume.
 - `tooling/verify_migrations.py`: executable reconstruction test used by CI.
+- `.github/workflows/ci.yml`: compiles the tooling and runs the unit tests on every pull request.
+- `.github/workflows/db-ci.yml`: rebuild, full rollback and reapply verification (Norma 5.2.8).
 
 ## Run migrations
 
