@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 case "${PG_ENVIRONMENT:-}" in
-  dev|qa|prod) ;;
-  *) echo "Set PG_ENVIRONMENT to dev, qa or prod" >&2; exit 2 ;;
+  dev|qa|main|prod) ;;
+  *) echo "Set PG_ENVIRONMENT to dev, qa or main (prod is an alias of main)" >&2; exit 2 ;;
 esac
 LIQUIBASE_COMMAND_PASSWORD=$(cat /run/secrets/patients_migrator_password)
 : "${LIQUIBASE_COMMAND_PASSWORD:?Empty migrator secret}"
