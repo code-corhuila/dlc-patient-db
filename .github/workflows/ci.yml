@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [dev, qa, prod]
+        environment: [dev, qa, main, prod]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -51,7 +51,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        environment: [dev, qa, prod]
+        environment: [dev, qa, main, prod]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
