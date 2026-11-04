@@ -3,6 +3,7 @@
 import difflib
 import hashlib
 import json
+import re
 import os
 from pathlib import Path
 import secrets
@@ -77,9 +78,19 @@ class MigrationRebuildTest(unittest.TestCase):
                 input_text=script, check=check, return_result=not check)
 
         inbox_support = (ROOT / "tooling/tests/inbox_support.sql").read_text()
+        legacy_tables = {"patient": "patients", "emergency_contact": "emergency_contacts",
+                         "idempotency_record": "idempotency_records", "outbox_event": "outbox_events",
+                         "inbox_event": "inbox_events", "deactivation_operation": "deactivation_operations"}
+        # Upgrade stages run before the naming migration, so they still see the delivered plural names.
+
+        def to_legacy(script):
+            return re.sub(r"\bpatients\.(" + "|".join(legacy_tables) + r")\b",
+                          lambda m: "patients." + legacy_tables[m[1]], script)
+
+        legacy_support = to_legacy(support)
 
         def storage_checks():
-            for name in ("patient_identity", "emergency_contacts", "patient_audit", "idempotency_records", "outbox_events", "inbox_events", "deactivation_operations", "patient_query_indexes"):
+            for name in ("patient_identity", "emergency_contacts", "patient_audit", "idempotency_records", "outbox_events", "inbox_events", "deactivation_operations", "patient_query_indexes", "naming_conventions"):
                 print("Storage checks: " + name, flush=True)
                 fixture = inbox_support if name == "inbox_events" else ""
                 result = sql_script("BEGIN;\n" + support + fixture + (ROOT / f"tooling/tests/{name}.sql").read_text())
@@ -96,22 +107,23 @@ class MigrationRebuildTest(unittest.TestCase):
             return role_sql("patients_runtime", env["PG_RUNTIME_TEST_PASSWORD"], script, check)
 
         def runtime_denied():
-            result = runtime_sql("SELECT count(*) FROM patients.patients;", check=False)
+            result = runtime_sql("SELECT count(*) FROM patients.patient;", check=False)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn("42501", result.stderr)
 
-        def runtime_checks():
+        def runtime_checks(legacy=False):
             print("Runtime checks: authenticated least-privileged connection", flush=True)
             sql("CREATE TABLE patients.runtime_future_probe (id integer)")
             try:
-                runtime_sql("BEGIN;\n" + support + inbox_support +
-                            (ROOT / "tooling/tests/runtime_permissions.sql").read_text())
+                script = ("BEGIN;\n" + support + inbox_support +
+                          (ROOT / "tooling/tests/runtime_permissions.sql").read_text())
+                runtime_sql(to_legacy(script) if legacy else script)
             finally:
                 sql("DROP TABLE patients.runtime_future_probe RESTRICT")
 
         def concurrent_identity_check():
             def insert(n, kind, number):
-                return ("INSERT INTO patients.patients (patient_id, document_type, "
+                return ("INSERT INTO patients.patient (patient_id, document_type, "
                         "document_number, name, birth_date, phone, email, created_by, updated_by) "
                         f"VALUES ('00000000-0000-4000-8000-{n:012d}', '{kind}', '{number}', "
                         "'Synthetic Race', '2000-01-01', '3000000000', 'race@example.invalid', "
@@ -119,8 +131,8 @@ class MigrationRebuildTest(unittest.TestCase):
                         "'10000000-0000-4000-8000-000000000001'); ")
 
             concurrent_insert_check(insert(10, 'CC', 'RACE-01'), insert(11, ' cc ', ' race-01 '),
-                                    'uk_patients_document')
-            self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "1")
+                                    'uk_patient_document')
+            self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "1")
 
         def concurrent_insert_check(first_insert, second_insert, constraint):
             first = subprocess.Popen([*psql, "SET application_name = 'patients-race'; "
@@ -147,13 +159,13 @@ class MigrationRebuildTest(unittest.TestCase):
             self.fail("First transaction did not reach its held write or row lock")
 
         def concurrent_outbox_claim_check():
-            sql("INSERT INTO patients.outbox_events (event_id,aggregate_id,event_type,occurred_at,payload,correlation_id,causation_id) "
+            sql("INSERT INTO patients.outbox_event (event_id,aggregate_id,event_type,occurred_at,payload,correlation_id,causation_id) "
                 "SELECT ('50000000-0000-4000-8000-'||lpad(n::text,12,'0'))::uuid, "
                 "'00000000-0000-4000-8000-000000000010','PatientProfileUpdated',statement_timestamp(), "
                 "jsonb_build_object('patientId','00000000-0000-4000-8000-000000000010','changedFields',jsonb_build_array('phone'), "
                 "'updatedAt',statement_timestamp(),'updatedBy','10000000-0000-4000-8000-000000000001'), "
                 "'60000000-0000-4000-8000-000000000001','70000000-0000-4000-8000-000000000001' FROM (VALUES (10),(11)) s(n)")
-            claim = ("SELECT event_id FROM patients.outbox_events WHERE status='PENDING' AND next_retry_at<=clock_timestamp() "
+            claim = ("SELECT event_id FROM patients.outbox_event WHERE status='PENDING' AND next_retry_at<=clock_timestamp() "
                      "ORDER BY next_retry_at,recorded_at,event_id LIMIT 1 FOR UPDATE SKIP LOCKED")
             first = subprocess.Popen([*psql,"SET application_name='patients-race'; BEGIN; " + claim + "; SELECT pg_sleep(8); COMMIT;"],
                 cwd=ROOT,env=env,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
@@ -166,12 +178,12 @@ class MigrationRebuildTest(unittest.TestCase):
             self.assertIn('50000000-0000-4000-8000-000000000010',output)
 
         def concurrent_idempotency_check():
-            statement = ("INSERT INTO patients.idempotency_records (actor_kind, actor_subject, operation, "
+            statement = ("INSERT INTO patients.idempotency_record (actor_kind, actor_subject, operation, "
                 "target_resource, idempotency_key, request_hash, response_status, response_body) VALUES "
                 "('SERVICE','patients-ci','register','/patients','40000000-0000-4000-8000-000000000010',"
                 "repeat('a',64),201,'{}'); ")
-            concurrent_insert_check(statement, statement, 'pk_idempotency_records')
-            self.assertEqual(sql("SELECT count(*) FROM patients.idempotency_records"), "1")
+            concurrent_insert_check(statement, statement, 'pk_idempotency_record')
+            self.assertEqual(sql("SELECT count(*) FROM patients.idempotency_record"), "1")
 
         def concurrent_inbox_check():
             def receive(event_id, version):
@@ -179,20 +191,20 @@ class MigrationRebuildTest(unittest.TestCase):
 
             first_id = '80000000-0000-4000-8000-000000000001'
             concurrent_insert_check(receive(first_id, 1), receive(first_id, 1),
-                                    ('pk_inbox_events', 'uk_inbox_events_source'))
+                                    ('pk_inbox_event', 'uk_inbox_event_source'))
             # Different event IDs for one source fact must race on source uniqueness.
             concurrent_insert_check(receive('80000000-0000-4000-8000-000000000002', 2),
-                                    receive('80000000-0000-4000-8000-000000000003', 2), 'uk_inbox_events_source')
-            self.assertEqual(sql("SELECT count(*) FROM patients.inbox_events"), "2")
+                                    receive('80000000-0000-4000-8000-000000000003', 2), 'uk_inbox_event_source')
+            self.assertEqual(sql("SELECT count(*) FROM patients.inbox_event"), "2")
 
         def concurrent_deactivation_check():
-            statement = ("INSERT INTO patients.deactivation_operations "
+            statement = ("INSERT INTO patients.deactivation_operation "
                 "(operation_id,patient_id,actor_id,idempotency_key,expected_version,reason) VALUES "
                 "('b1000000-0000-4000-8000-000000000010','00000000-0000-4000-8000-000000000010',"
                 "'10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000010',1,'Synthetic intent');")
             concurrent_insert_check(statement, statement.replace('b1000000-0000-4000-8000-000000000010',
-                'b1000000-0000-4000-8000-000000000011'), 'uk_deactivation_operations_request')
-            self.assertEqual(sql("SELECT count(*) FROM patients.deactivation_operations"), "1")
+                'b1000000-0000-4000-8000-000000000011'), 'uk_deactivation_operation_request')
+            self.assertEqual(sql("SELECT count(*) FROM patients.deactivation_operation"), "1")
 
         def migrate(*args, check=True, include_seeds=False, direct=False):
             if not include_seeds and args[0] in ("update", "update-count"):
@@ -238,7 +250,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 migrate("update-count", "--count=1")
                 sql_script(bootstrap_sql)
                 migrate("update")
-                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "34")
+                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "35")
                 return
             for bad_environment in ("staging", ""):
                 env["PG_ENVIRONMENT"] = bad_environment
@@ -287,7 +299,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 sql("GRANT USAGE ON SCHEMA query_extensions TO patients_migrator")
             migrate("update")
             self.assertEqual(sql(history + " WHERE orderexecuted<=33 ORDER BY orderexecuted"), query_baseline)
-            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "34")
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "35")
             storage_checks()
             for query in (
                 "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='patients'",
@@ -311,7 +323,7 @@ class MigrationRebuildTest(unittest.TestCase):
 
         def query_index_count():
             return sql("SELECT count(*) FROM pg_indexes WHERE schemaname='patients' AND indexname IN "
-                "('idx_patients_created_at_patient_id','idx_patients_status_created_at_patient_id','idx_patients_name_document_search')")
+                "('idx_patient_created_at_patient_id','idx_patient_status_created_at_patient_id','idx_patient_name_document_search')")
 
         def backup_restore_checks():
             source = env["PG_DATABASE"]
@@ -380,7 +392,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 migrate("update")
                 history = role_sql("patients_migrator", env["PG_OWNER_TEST_PASSWORD"],
                     "SELECT count(*) FROM public.databasechangelog_patients;")
-                self.assertIn("34", history)
+                self.assertIn("35", history)
                 role_sql("patients_runtime", env["PG_RUNTIME_TEST_PASSWORD"], "BEGIN;\n" + support +
                     (ROOT / "tooling/tests/backup_restore_permissions.sql").read_text())
             finally:
@@ -400,41 +412,41 @@ class MigrationRebuildTest(unittest.TestCase):
             for extra in ((), ("--contexts=dev,prod",)):
                 migrate("update", *extra, include_seeds=True, direct=True)
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
-                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "0")
+                self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
             migrate("update", include_seeds=True)
-            expected = "34" if ENVIRONMENT == "prod" else "35"
+            expected = "35" if ENVIRONMENT == "prod" else "36"
             self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
             if ENVIRONMENT == "prod":
-                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "0")
-                self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contacts"), "0")
+                self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
+                self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contact"), "0")
             else:
                 runtime_sql("BEGIN;\n" + (ROOT / "tooling/tests/synthetic_seeds.sql").read_text())
                 data = ("SELECT jsonb_build_object('profiles',(SELECT jsonb_agg(to_jsonb(p) ORDER BY patient_id) "
-                    "FROM patients.patients p),'contacts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY emergency_contact_id) "
-                    "FROM patients.emergency_contacts c))")
+                    "FROM patients.patient p),'contacts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY emergency_contact_id) "
+                    "FROM patients.emergency_contact c))")
                 recorded = sql(history + " ORDER BY orderexecuted")
                 seeded = sql(data)
                 migrate("update", include_seeds=True)
                 self.assertEqual(sql(data), seeded)
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
                 sql_script(support + "SELECT pg_temp.register_patient(90,'CC','SEED-UNRELATED'); "
-                    "INSERT INTO patients.emergency_contacts VALUES ('20000000-0000-4000-8000-000000000090',"
+                    "INSERT INTO patients.emergency_contact VALUES ('20000000-0000-4000-8000-000000000090',"
                     "'00000000-0000-4000-8000-000000000090','Synthetic Other','Relative','3000000000');")
-                unrelated = ("SELECT to_jsonb(p),to_jsonb(c) FROM patients.patients p "
-                    "JOIN patients.emergency_contacts c USING(patient_id) "
+                unrelated = ("SELECT to_jsonb(p),to_jsonb(c) FROM patients.patient p "
+                    "JOIN patients.emergency_contact c USING(patient_id) "
                     "WHERE patient_id='00000000-0000-4000-8000-000000000090'")
                 other = sql(unrelated)
                 seeded = sql(data)
                 for change, restore in (
-                    ("UPDATE patients.emergency_contacts SET name='Edited' WHERE emergency_contact_id="
+                    ("UPDATE patients.emergency_contact SET name='Edited' WHERE emergency_contact_id="
                         "'f2100000-0000-4000-8000-000000000001'",
-                     "UPDATE patients.emergency_contacts SET name='Synthetic Contact One' WHERE emergency_contact_id="
+                     "UPDATE patients.emergency_contact SET name='Synthetic Contact One' WHERE emergency_contact_id="
                         "'f2100000-0000-4000-8000-000000000001'"),
-                    ("UPDATE patients.patients SET address='Edited' WHERE patient_id='f2000000-0000-4000-8000-000000000002'",
-                     "UPDATE patients.patients SET address=NULL WHERE patient_id='f2000000-0000-4000-8000-000000000002'"),
-                    ("INSERT INTO patients.emergency_contacts VALUES ('20000000-0000-4000-8000-000000000092',"
+                    ("UPDATE patients.patient SET address='Edited' WHERE patient_id='f2000000-0000-4000-8000-000000000002'",
+                     "UPDATE patients.patient SET address=NULL WHERE patient_id='f2000000-0000-4000-8000-000000000002'"),
+                    ("INSERT INTO patients.emergency_contact VALUES ('20000000-0000-4000-8000-000000000092',"
                         "'f2000000-0000-4000-8000-000000000001','Synthetic New Reference','Relative','3000000000')",
-                     "DELETE FROM patients.emergency_contacts WHERE emergency_contact_id='20000000-0000-4000-8000-000000000092'")):
+                     "DELETE FROM patients.emergency_contact WHERE emergency_contact_id='20000000-0000-4000-8000-000000000092'")):
                     sql(change)
                     changed = sql(data)
                     rejected = migrate("rollback-count", "--count=1", include_seeds=True, check=False)
@@ -444,17 +456,17 @@ class MigrationRebuildTest(unittest.TestCase):
                     sql(restore)
                 migrate("rollback-count", "--count=1", include_seeds=True)
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
-                self.assertEqual(sql("SELECT count(*) FROM patients.patients"), "1")
-                self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contacts"), "1")
+                self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "1")
+                self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contact"), "1")
                 self.assertEqual(sql(unrelated), other)
                 sql_script(support + "SELECT pg_temp.register_patient(91,'CC','SYNTHETIC-PAT-002');")
                 collision = sql(data)
                 rejected = migrate("update", include_seeds=True, check=False)
                 self.assertNotEqual(rejected.returncode, 0, "Seed overwrote an existing document")
-                self.assertIn("uk_patients_document", rejected.stdout + rejected.stderr)
+                self.assertIn("uk_patient_document", rejected.stdout + rejected.stderr)
                 self.assertEqual(sql(data), collision)
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
-                sql("DELETE FROM patients.patients WHERE patient_id='00000000-0000-4000-8000-000000000091'")
+                sql("DELETE FROM patients.patient WHERE patient_id='00000000-0000-4000-8000-000000000091'")
                 migrate("update", include_seeds=True)
                 self.assertEqual(sql(data), seeded)
             self.assertEqual(sql(history + f" WHERE id<>'{seed_id}' ORDER BY orderexecuted"), previous)
@@ -519,7 +531,7 @@ class MigrationRebuildTest(unittest.TestCase):
             prior_history_query = (f"SELECT id, md5sum, dateexecuted FROM {history} "
                                    f"WHERE orderexecuted <= {baseline_count} ORDER BY orderexecuted")
             prior_history = sql(prior_history_query)
-            sql_script(support + "SELECT pg_temp.register_patient(90, 'CC', 'CONTACTS-UPGRADE');")
+            sql_script(legacy_support + "SELECT pg_temp.register_patient(90, 'CC', 'CONTACTS-UPGRADE');")
             patient_query = ("SELECT row_to_json(p)::text FROM patients.patients p "
                              "WHERE patient_id = '00000000-0000-4000-8000-000000000090'")
             prior_patient = sql(patient_query)
@@ -615,7 +627,7 @@ class MigrationRebuildTest(unittest.TestCase):
                     sql(restore)
             migrate("update", "--label-filter=!deactivation-operations and !query-indexes")
             self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")) - grants_baseline, 1)
-            runtime_checks()
+            runtime_checks(legacy=True)
             migrate("rollback-count", "--count=1")
             runtime_denied()
             self.assertEqual(sql(patient_query), prior_patient)
@@ -644,17 +656,17 @@ class MigrationRebuildTest(unittest.TestCase):
             sql("CREATE EXTENSION pg_trgm WITH SCHEMA query_extensions")
             extension = sql("SELECT oid,extnamespace FROM pg_extension WHERE extname='pg_trgm'")
             migrate("update")
-            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 34)
-            migrate("rollback-count", "--count=1")
+            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 35)
+            migrate("rollback-count", "--count=2")
             self.assertEqual(query_index_count(), "0")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
             self.assertEqual(sql(f"SELECT id,md5sum,dateexecuted FROM {history} ORDER BY orderexecuted"), query_baseline)
             self.assertEqual(sql("SELECT oid,extnamespace FROM pg_extension WHERE extname='pg_trgm'"), extension)
             migrate("update")
-            sql("DELETE FROM patients.emergency_contacts WHERE "
+            sql("DELETE FROM patients.emergency_contact WHERE "
                 "emergency_contact_id = '20000000-0000-4000-8000-000000000090'")
-            sql("DELETE FROM patients.patients WHERE "
+            sql("DELETE FROM patients.patient WHERE "
                 "patient_id = '00000000-0000-4000-8000-000000000090'")
             self.assertEqual(schema_count(), "1")
             self.assertEqual(sql(f"SELECT id, md5sum, dateexecuted FROM {history} "
