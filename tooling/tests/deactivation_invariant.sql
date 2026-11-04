@@ -1,7 +1,7 @@
 SELECT pg_temp.register_patient(81, 'CC', 'INVARIANT-81');
-INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason)
+INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason_code,reason)
 VALUES ('b8000000-0000-4000-8000-000000000081','00000000-0000-4000-8000-000000000081',
-    '10000000-0000-4000-8000-000000000001','c8000000-0000-4000-8000-000000000081',1,'Administrative closure');
+    '10000000-0000-4000-8000-000000000001','c8000000-0000-4000-8000-000000000081',1,'ADMINISTRATIVE','Administrative closure');
 UPDATE patients.deactivation_operation SET guard_id='d8000000-0000-4000-8000-000000000081',guard_token_hash=repeat('a',64);
 CREATE FUNCTION pg_temp.expect_at_commit(statements text[], expected text) RETURNS void LANGUAGE plpgsql AS $$
 DECLARE statement text; violated text;
