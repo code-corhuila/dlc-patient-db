@@ -36,7 +36,7 @@ class MigrationRebuildTest(unittest.TestCase):
         env = dict(os.environ, PG_HOST=container, PG_PORT="5432",
                    PG_DATABASE="patients_ci", PG_MIGRATION_USER="postgres",
                    PG_MIGRATION_PASSWORD=secrets.token_hex(24),
-                   PG_RUNTIME_TEST_PASSWORD=secrets.token_hex(24),
+                   PG_RUNTIME_TEST_PASSWORD=secrets.token_hex(24), PG_APP_TEST_PASSWORD=secrets.token_hex(24),
                    PG_OWNER_TEST_PASSWORD=secrets.token_hex(24), PG_NETWORK=network)
 
         if ENVIRONMENT:
@@ -48,7 +48,7 @@ class MigrationRebuildTest(unittest.TestCase):
             env.update(PG_ENVIRONMENT=ENVIRONMENT, PG_MIGRATOR_PASSWORD_FILE=str(password_file))
 
         def redact(output):
-            for key in ("PG_MIGRATION_PASSWORD", "PG_RUNTIME_TEST_PASSWORD", "PG_OWNER_TEST_PASSWORD"):
+            for key in ("PG_MIGRATION_PASSWORD", "PG_RUNTIME_TEST_PASSWORD", "PG_APP_TEST_PASSWORD", "PG_OWNER_TEST_PASSWORD"):
                 output = output.replace(env[key], "[REDACTED]")
             return output
 
@@ -123,6 +123,9 @@ class MigrationRebuildTest(unittest.TestCase):
                 script = ("BEGIN;\n" + support + inbox_support +
                           (ROOT / "tooling/tests/runtime_permissions.sql").read_text())
                 runtime_sql(to_legacy(script) if legacy else script)
+                if not legacy:
+                    role_sql("patients_app", env["PG_APP_TEST_PASSWORD"], "BEGIN;" + chr(10) + support +
+                             (ROOT / "tooling/tests/domain_roles.sql").read_text())
             finally:
                 sql("DROP TABLE patients.runtime_future_probe RESTRICT")
 
@@ -250,12 +253,13 @@ class MigrationRebuildTest(unittest.TestCase):
             finally:
                 sql("ALTER ROLE patients_runtime NOCREATEROLE")
             sql("ALTER ROLE patients_migrator PASSWORD '" + env["PG_OWNER_TEST_PASSWORD"] + "'; "
-                "ALTER ROLE patients_runtime PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
+                "ALTER ROLE patients_runtime PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'; "
+                "ALTER ROLE patients_app PASSWORD '" + env["PG_APP_TEST_PASSWORD"] + "'")
             if BACKUP_RESTORE or SYNTHETIC_SEEDS:
                 migrate("update-count", "--count=1")
                 sql_script(bootstrap_sql)
                 migrate("update")
-                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "36")
+                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "37")
                 return
             for bad_environment in ("staging", ""):
                 env["PG_ENVIRONMENT"] = bad_environment
@@ -304,7 +308,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 sql("GRANT USAGE ON SCHEMA query_extensions TO patients_migrator")
             migrate("update")
             self.assertEqual(sql(history + " WHERE orderexecuted<=33 ORDER BY orderexecuted"), query_baseline)
-            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "36")
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "37")
             storage_checks()
             for query in (
                 "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='patients'",
@@ -397,7 +401,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 migrate("update")
                 history = role_sql("patients_migrator", env["PG_OWNER_TEST_PASSWORD"],
                     "SELECT count(*) FROM public.databasechangelog_patients;")
-                self.assertIn("36", history)
+                self.assertIn("37", history)
                 role_sql("patients_runtime", env["PG_RUNTIME_TEST_PASSWORD"], "BEGIN;\n" + support +
                     (ROOT / "tooling/tests/backup_restore_permissions.sql").read_text())
             finally:
@@ -419,7 +423,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
             migrate("update", include_seeds=True)
-            expected = "36" if ENVIRONMENT == "prod" else "37"
+            expected = "37" if ENVIRONMENT == "prod" else "38"
             self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
             if ENVIRONMENT == "prod":
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
@@ -514,6 +518,10 @@ class MigrationRebuildTest(unittest.TestCase):
                 return
             sql("CREATE ROLE patients_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
                 "NOREPLICATION NOBYPASSRLS PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
+            sql("CREATE ROLE patients_reader NOLOGIN; CREATE ROLE patients_writer NOLOGIN; "
+                "GRANT patients_reader, patients_runtime TO patients_writer; "
+                "CREATE ROLE patients_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+                "NOREPLICATION NOBYPASSRLS PASSWORD '" + env["PG_APP_TEST_PASSWORD"] + "'")
             migrate("validate")
             if SCHEMA_SMOKE:
                 print("Schema smoke: empty-store migration and current storage checks", flush=True)
@@ -661,8 +669,8 @@ class MigrationRebuildTest(unittest.TestCase):
             sql("CREATE EXTENSION pg_trgm WITH SCHEMA query_extensions")
             extension = sql("SELECT oid,extnamespace FROM pg_extension WHERE extname='pg_trgm'")
             migrate("update")
-            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 36)
-            migrate("rollback-count", "--count=3")
+            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 37)
+            migrate("rollback-count", "--count=4")
             self.assertEqual(query_index_count(), "0")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
