@@ -7,7 +7,7 @@ its schema. Each environment has separate hosts, credentials and deployment appr
 ## Provision and run
 
 1. The authorized platform DBA runs `deploy/bootstrap.sql` in the selected database.
-   It creates LOGIN roles `patients_migrator` and `patients_runtime` without elevated
+   It creates LOGIN roles `patients_migrator`, `patients_runtime` and `patients_app` (plus the NOLOGIN `patients_reader` and `patients_writer`) without elevated
    role attributes or memberships. Assign distinct passwords through the environment's
    secret manager. The SQL contains no passwords and installs no extensions.
 2. Copy `deploy/.env.environment.example` to a local ignored `deploy/dev.env`,

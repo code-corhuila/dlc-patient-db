@@ -3,9 +3,6 @@ databaseChangeLog:
       file: ../01_ddl/changelog.yaml
       relativeToChangelogFile: true
   - include:
-      file: ../02_dml/changelog.yaml
-      relativeToChangelogFile: true
-  - include:
       file: ../03_dcl/changelog.yaml
       relativeToChangelogFile: true
   - include:
@@ -13,4 +10,10 @@ databaseChangeLog:
       relativeToChangelogFile: true
   - include:
       file: ../01_ddl/11_rename/changelog.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: ../03_dcl/02_roles/changelog.yaml
+      relativeToChangelogFile: true
+  - include:
+      file: ../02_dml/changelog.yaml
       relativeToChangelogFile: true
