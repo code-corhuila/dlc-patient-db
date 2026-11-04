@@ -5,7 +5,7 @@ Canonical model and boundaries: [Patients data model](https://github.com/code-co
 and [HTTP contract](https://github.com/code-corhuila/dlc-docs/blob/main/07-api/contracts/openapi/patients-service.yaml).
 This dictionary maps the implemented storage increment; it does not replace dlc-docs.
 
-| Column in `patients.patients` | Type | Storage rule |
+| Column in `patients.patient` | Type | Storage rule |
 |---|---|---|
 | patient_id | uuid | Required primary key supplied by the API; immutable after insertion |
 | document_type | text | Required, nonblank, at most 30 characters |
@@ -22,12 +22,12 @@ This dictionary maps the implemented storage increment; it does not replace dlc-
 
 ## Emergency contacts — HU-PAT-001
 
-`patients.emergency_contacts` belongs to the same administrative aggregate.
+`patients.emergency_contact` belongs to the same administrative aggregate.
 
 | Column | Type | Storage rule |
 |---|---|---|
 | emergency_contact_id | uuid | Required primary key supplied by the API |
-| patient_id | uuid | Required local reference to patients.patients |
+| patient_id | uuid | Required local reference to patients.patient |
 | name | text | Required, nonblank, at most 255 characters |
 | relationship | text | Required, nonblank, at most 80 characters; no closed catalog is specified |
 | phone | text | Required, nonblank, at most 40 characters; semantic phone validation belongs to API |
@@ -69,7 +69,7 @@ and no purge is introduced.
 
 This storage mapping implements the scope/retention rules in
 [API design decisions](https://github.com/code-corhuila/dlc-docs/blob/main/07-api/design-decisions.md#idempotency-and-optimistic-updates).
-`patients.idempotency_records` stores completed outcomes, not pending guard intents.
+`patients.idempotency_record` stores completed outcomes, not pending guard intents.
 
 | Column | Type | Storage rule |
 |---|---|---|
@@ -96,7 +96,7 @@ Expiration neither releases coordination guards nor removes permanent document u
 
 ## Outbox events — HU-PAT-001
 
-`patients.outbox_events` maps the [Patients event contracts](https://github.com/code-corhuila/dlc-docs/blob/main/09-microservices/services/03-patients-service/events.md).
+`patients.outbox_event` maps the [Patients event contracts](https://github.com/code-corhuila/dlc-docs/blob/main/09-microservices/services/03-patients-service/events.md).
 
 | Columns | Storage rule |
 |---|---|
@@ -121,7 +121,7 @@ profile/audit/outbox orchestration remain producer/application work. The publish
 mark PUBLISHED only after broker confirmation; a crash may cause same-event redelivery.
 Consumers still require Inbox deduplication, and current patient/guard contracts remain authoritative.
 
-## patients.inbox_events
+## patients.inbox_event
 
 Storage for ClinicalAssignmentStarted/ClinicalAssignmentEnded v1 from appointments-service,
 following `03-patients-service/events.md`, `event-ordering.md` and their canonical schemas.
@@ -170,7 +170,7 @@ SQL constraints complement application/domain validation; they do not authorize 
 
 Explicit database permissions and their provisioning boundaries are described in [runtime permissions](runtime-permissions.md).
 
-## patients.deactivation_operations
+## patients.deactivation_operation
 
 Implements caller-side intent storage from ADR-017 and the Patients data model.
 
