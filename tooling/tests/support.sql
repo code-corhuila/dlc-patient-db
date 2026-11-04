@@ -1,6 +1,6 @@
 CREATE FUNCTION pg_temp.register_patient(n integer, kind text, number text) RETURNS uuid
 LANGUAGE sql AS $$
-    INSERT INTO patients.patients
+    INSERT INTO patients.patient
         (patient_id, document_type, document_number, name, birth_date, phone, email,
          created_by, updated_by)
     VALUES (('00000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
