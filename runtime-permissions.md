@@ -44,3 +44,13 @@ trigger disabling, history rewrites and unexpected access to a future table. Tem
 helpers use the disposable database's TEMP privilege; database/PUBLIC policy, deployment
 secrets remain external work. See [environment bootstrap](environment-bootstrap.md)
 for the separately tested non-superuser migrator and its deployment boundaries.
+
+## Domain roles (Annex J.4, J.7)
+
+`patients_reader` and `patients_writer` are NOLOGIN roles created by `deploy/bootstrap.sql`.
+`patients_writer` inherits `patients_reader` and the explicit `patients_runtime` grants above;
+`patients_reader` may only SELECT `patients.patient` and `patients.emergency_contact`.
+The infrastructure user `patients_app` (credentials set outside this repository) receives
+`patients_writer` through changeset `patients-dcl-roles-001`; the API connects as `patients_app`.
+`patients_migrator` only holds the writer role WITH ADMIN OPTION (no inheritance, no SET) to delegate it.
+`patients_runtime` stays as the grant holder of the delivered increments and is not a service login.

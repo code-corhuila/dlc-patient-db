@@ -36,7 +36,7 @@ class MigrationRebuildTest(unittest.TestCase):
         env = dict(os.environ, PG_HOST=container, PG_PORT="5432",
                    PG_DATABASE="patients_ci", PG_MIGRATION_USER="postgres",
                    PG_MIGRATION_PASSWORD=secrets.token_hex(24),
-                   PG_RUNTIME_TEST_PASSWORD=secrets.token_hex(24),
+                   PG_RUNTIME_TEST_PASSWORD=secrets.token_hex(24), PG_APP_TEST_PASSWORD=secrets.token_hex(24),
                    PG_OWNER_TEST_PASSWORD=secrets.token_hex(24), PG_NETWORK=network)
 
         if ENVIRONMENT:
@@ -48,7 +48,7 @@ class MigrationRebuildTest(unittest.TestCase):
             env.update(PG_ENVIRONMENT=ENVIRONMENT, PG_MIGRATOR_PASSWORD_FILE=str(password_file))
 
         def redact(output):
-            for key in ("PG_MIGRATION_PASSWORD", "PG_RUNTIME_TEST_PASSWORD", "PG_OWNER_TEST_PASSWORD"):
+            for key in ("PG_MIGRATION_PASSWORD", "PG_RUNTIME_TEST_PASSWORD", "PG_APP_TEST_PASSWORD", "PG_OWNER_TEST_PASSWORD"):
                 output = output.replace(env[key], "[REDACTED]")
             return output
 
@@ -84,13 +84,18 @@ class MigrationRebuildTest(unittest.TestCase):
         # Upgrade stages run before the naming migration, so they still see the delivered plural names.
 
         def to_legacy(script):
-            return re.sub(r"\bpatients\.(" + "|".join(legacy_tables) + r")\b",
-                          lambda m: "patients." + legacy_tables[m[1]], script)
+            script = re.sub(r"\bpatients\.(" + "|".join(legacy_tables) + r")\b",
+                            lambda m: "patients." + legacy_tables[m[1]], script)
+            for singular, plural in legacy_tables.items():
+                keep = "(?!_audit)" if singular == "patient" else ""
+                script = re.sub(r"\b(chk|fk|pk|uk|idx|trg)_" + singular + keep + r"(?=_|\b)",
+                                lambda m, p=plural: ("ck" if m[1] == "chk" else m[1]) + "_" + p, script)
+            return script.replace("idx_inbox_events_pending", "ix_inbox_events_pending")
 
         legacy_support = to_legacy(support)
 
         def storage_checks():
-            for name in ("patient_identity", "emergency_contacts", "patient_audit", "idempotency_records", "outbox_events", "inbox_events", "deactivation_operations", "patient_query_indexes", "naming_conventions"):
+            for name in ("patient_identity", "emergency_contacts", "patient_audit", "idempotency_records", "outbox_events", "inbox_events", "deactivation_operations", "patient_query_indexes", "naming_conventions", "deactivation_invariant"):
                 print("Storage checks: " + name, flush=True)
                 fixture = inbox_support if name == "inbox_events" else ""
                 result = sql_script("BEGIN;\n" + support + fixture + (ROOT / f"tooling/tests/{name}.sql").read_text())
@@ -118,6 +123,9 @@ class MigrationRebuildTest(unittest.TestCase):
                 script = ("BEGIN;\n" + support + inbox_support +
                           (ROOT / "tooling/tests/runtime_permissions.sql").read_text())
                 runtime_sql(to_legacy(script) if legacy else script)
+                if not legacy:
+                    role_sql("patients_app", env["PG_APP_TEST_PASSWORD"], "BEGIN;" + chr(10) + support +
+                             (ROOT / "tooling/tests/domain_roles.sql").read_text())
             finally:
                 sql("DROP TABLE patients.runtime_future_probe RESTRICT")
 
@@ -245,12 +253,13 @@ class MigrationRebuildTest(unittest.TestCase):
             finally:
                 sql("ALTER ROLE patients_runtime NOCREATEROLE")
             sql("ALTER ROLE patients_migrator PASSWORD '" + env["PG_OWNER_TEST_PASSWORD"] + "'; "
-                "ALTER ROLE patients_runtime PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
+                "ALTER ROLE patients_runtime PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'; "
+                "ALTER ROLE patients_app PASSWORD '" + env["PG_APP_TEST_PASSWORD"] + "'")
             if BACKUP_RESTORE or SYNTHETIC_SEEDS:
                 migrate("update-count", "--count=1")
                 sql_script(bootstrap_sql)
                 migrate("update")
-                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "35")
+                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "38")
                 return
             for bad_environment in ("staging", ""):
                 env["PG_ENVIRONMENT"] = bad_environment
@@ -299,7 +308,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 sql("GRANT USAGE ON SCHEMA query_extensions TO patients_migrator")
             migrate("update")
             self.assertEqual(sql(history + " WHERE orderexecuted<=33 ORDER BY orderexecuted"), query_baseline)
-            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "35")
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "38")
             storage_checks()
             for query in (
                 "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='patients'",
@@ -392,7 +401,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 migrate("update")
                 history = role_sql("patients_migrator", env["PG_OWNER_TEST_PASSWORD"],
                     "SELECT count(*) FROM public.databasechangelog_patients;")
-                self.assertIn("35", history)
+                self.assertIn("38", history)
                 role_sql("patients_runtime", env["PG_RUNTIME_TEST_PASSWORD"], "BEGIN;\n" + support +
                     (ROOT / "tooling/tests/backup_restore_permissions.sql").read_text())
             finally:
@@ -414,7 +423,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
             migrate("update", include_seeds=True)
-            expected = "35" if ENVIRONMENT == "prod" else "36"
+            expected = "38" if ENVIRONMENT == "prod" else "39"
             self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
             if ENVIRONMENT == "prod":
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
@@ -509,6 +518,10 @@ class MigrationRebuildTest(unittest.TestCase):
                 return
             sql("CREATE ROLE patients_runtime LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
                 "NOREPLICATION NOBYPASSRLS PASSWORD '" + env["PG_RUNTIME_TEST_PASSWORD"] + "'")
+            sql("CREATE ROLE patients_reader NOLOGIN; CREATE ROLE patients_writer NOLOGIN; "
+                "GRANT patients_reader, patients_runtime TO patients_writer; "
+                "CREATE ROLE patients_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
+                "NOREPLICATION NOBYPASSRLS PASSWORD '" + env["PG_APP_TEST_PASSWORD"] + "'")
             migrate("validate")
             if SCHEMA_SMOKE:
                 print("Schema smoke: empty-store migration and current storage checks", flush=True)
@@ -656,8 +669,8 @@ class MigrationRebuildTest(unittest.TestCase):
             sql("CREATE EXTENSION pg_trgm WITH SCHEMA query_extensions")
             extension = sql("SELECT oid,extnamespace FROM pg_extension WHERE extname='pg_trgm'")
             migrate("update")
-            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 35)
-            migrate("rollback-count", "--count=2")
+            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 38)
+            migrate("rollback-count", "--count=5")
             self.assertEqual(query_index_count(), "0")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)

@@ -18,11 +18,11 @@ SELECT pg_temp.expect_rejection($q$SELECT pg_temp.audit_candidate('patient_id',
     '"00000000-0000-4000-8000-000000000099"')$q$, '23503', 'fk_patient_audit_patient');
 SELECT pg_temp.expect_rejection('DELETE FROM patients.patient', '23503', 'fk_patient_audit_patient');
 SELECT pg_temp.expect_rejection('UPDATE patients.patient_audit SET patient_version = 2',
-                                '23514', 'ck_patient_audit_append_only');
+                                '23514', 'chk_patient_audit_append_only');
 SELECT pg_temp.expect_rejection('DELETE FROM patients.patient_audit',
-                                '23514', 'ck_patient_audit_append_only');
+                                '23514', 'chk_patient_audit_append_only');
 SELECT pg_temp.expect_rejection('TRUNCATE patients.patient_audit',
-                                '23514', 'ck_patient_audit_append_only');
+                                '23514', 'chk_patient_audit_append_only');
 -- Either retained child may reject the cascade first; do not depend on trigger order.
 DO $$ DECLARE blocked boolean := false; guard text;
 BEGIN
@@ -30,7 +30,7 @@ BEGIN
         TRUNCATE patients.patient CASCADE;
     EXCEPTION WHEN check_violation THEN
         GET STACKED DIAGNOSTICS guard = CONSTRAINT_NAME;
-        IF guard NOT IN ('ck_patient_audit_append_only','ck_outbox_events_immutable') THEN RAISE; END IF;
+        IF guard NOT IN ('chk_patient_audit_append_only','chk_outbox_event_immutable') THEN RAISE; END IF;
         blocked := true;
     END;
     IF NOT blocked THEN RAISE EXCEPTION 'Cascading truncation was accepted'; END IF;
