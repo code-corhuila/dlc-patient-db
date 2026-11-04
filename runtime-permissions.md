@@ -4,8 +4,9 @@ Source: dlc-docs ADR-008, `06-data/migration-strategy.md` and
 `09-microservices/services/03-patients-service/data-model.md`.
 Runtime persistence access is separate from business authorization in use cases.
 
-`patients_runtime` is the technical role selected by this DB increment. Infrastructure
-must provision it and its credential/database connection separately before migration.
+`patients_runtime` holds the explicit grants below. Since the Annex J roles were added it is
+a grant holder inherited by `patients_writer`; the API connects as `patients_app` (see the
+domain roles section). Bootstrap provisions it before migration.
 No CREATE/ALTER ROLE, passwords, database-wide changes or foreign-owner grants belong
 to this changeset. The disposable test role is synthetic provisioning, not deployment evidence.
 
