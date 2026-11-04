@@ -92,6 +92,61 @@ The service must commit the result with its owning write/audit/outbox in one tra
 database transaction tests are not evidence that API orchestration is implemented.
 Expiration neither releases coordination guards nor removes permanent document uniqueness.
 
+## Outbox events — HU-PAT-001
+
+`patients.outbox_events` maps the [Patients event contracts](https://github.com/code-corhuila/dlc-docs/blob/main/09-microservices/services/03-patients-service/events.md).
+
+| Columns | Storage rule |
+|---|---|
+| event_id | Immutable UUID primary key, reused on every delivery attempt |
+| aggregate_id / aggregate_type | Required local patient UUID reference, ON UPDATE/DELETE RESTRICT; type is Patient |
+| event_type / event_version / producer | PatientRegistered, PatientProfileUpdated or PatientDeactivated; schema version 1; patients-service |
+| occurred_at / recorded_at | Finite fact instant and server-stamped recording instant, both timestamptz |
+| payload | Required JSON object, matching patientId and exactly the required payload keys for its event type |
+| correlation_id / causation_id / actor_user_id | Correlation and causation UUIDs required; actor UUID nullable under the envelope contract |
+| status / attempts | Initially PENDING / 0; PENDING, FAILED and PUBLISHED are local publication states; attempts never decreases |
+| next_retry_at / published_at | Pending work requires a finite retry instant; published work gets a server-stamped marker and no retry instant |
+| error_code | Optional uppercase code (at most 100 characters), required for FAILED; no free-form driver details |
+
+Facts, payload and tracing identifiers cannot change. DELETE/TRUNCATE are rejected;
+no history-purge policy is invented. FAILED may be reconciled to PENDING, while PUBLISHED
+is terminal. Counters/backoff limits and broker confirmation belong to the future relay.
+The pending partial index supports bounded `FOR UPDATE SKIP LOCKED` claims; an additional
+aggregate index supports the local foreign key. Concurrent claim checks verify row locks,
+not broker delivery, exactly-once processing or global business ordering.
+Full JSON Schema validation, event serialization, owner-side authorization and atomic
+profile/audit/outbox orchestration remain producer/application work. The publisher must
+mark PUBLISHED only after broker confirmation; a crash may cause same-event redelivery.
+Consumers still require Inbox deduplication, and current patient/guard contracts remain authoritative.
+
+## patients.inbox_events
+
+Storage for ClinicalAssignmentStarted/ClinicalAssignmentEnded v1 from appointments-service,
+following `03-patients-service/events.md`, `event-ordering.md` and their canonical schemas.
+
+| Field | Storage contract |
+|---|---|
+| event_id | Immutable UUID primary key, deduplicates transport redelivery |
+| aggregate_id / aggregate_type | Assignment UUID / ClinicalAssignment; no cross-owner or local patient FK |
+| event_type / event_version / producer | The two assignment events, envelope schema version 1, appointments-service |
+| assignment_version | Positive payload business version; distinct from envelope version, must match payload.version |
+| payload | Required object, matching assignmentId, exact required keys for the selected event |
+| occurred_at / recorded_at | Finite source instant / server-stamped reception instant |
+| correlation_id / causation_id / actor_user_id | Required trace UUIDs / nullable actor UUID |
+| status / attempts | Initially PENDING / 0; FAILED can retry; PROCESSED is terminal; attempts never decreases |
+| next_retry_at / processed_at / error_code | Finite pending retry, server processing marker, optional safe code required on FAILED |
+
+Unique `(producer, aggregate_id, event_type, assignment_version)` prevents distinct IDs
+from representing the same source fact twice. Facts cannot change or be deleted/truncated;
+retention/purge policy remains undefined. Pending batches have a partial retry index.
+The future consumer must validate the full JSON Schema and quarantine unknown/malformed
+or conflicting facts before mutation; SQL checks are complementary. Existing PENDING/FAILED
+records do not justify ACK. Commit invalidation and processing marker atomically before ACK;
+a stored marker alone does not implement broker acknowledgement or exactly-once delivery.
+Business versions invalidate stale projections; neither event arrival order nor this table
+confers access. Current owner validation remains mandatory. Consumer retries/backoff,
+quarantine, minimized projection invalidation and broker integration remain pending.
+
 ## Document equality
 
 Owner clarification approved on 2026-10-24: equality uses `upper(btrim(value))`
