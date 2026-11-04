@@ -1,0 +1,21 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-dcl-roles-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,runtime,dcl,roles,emergency-contacts,patient-audit,idempotency,outbox,inbox,deactivation-operations,query-indexes"
+      comment: "Annex J.4/J.7: reader and writer roles; the infrastructure user patients_app receives the writer role."
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - onFailMessage: "Provision patients_reader, patients_writer and patients_app first (deploy/bootstrap.sql and the infrastructure init script)."
+        - sqlCheck:
+            expectedResult: "3"
+            sql: "SELECT count(*) FROM pg_roles WHERE rolname IN ('patients_reader','patients_writer','patients_app') AND NOT (rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)"
+      changes:
+        - sqlFile:
+            path: 001_domain_roles.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/02_roles/001_domain_roles.rollback.sql
+            relativeToChangelogFile: true

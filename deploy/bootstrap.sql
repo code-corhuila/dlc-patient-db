@@ -3,17 +3,18 @@
 DO $$
 DECLARE role_name text; table_name text;
 BEGIN
-    FOREACH role_name IN ARRAY ARRAY['patients_migrator','patients_runtime'] LOOP
+    FOREACH role_name IN ARRAY ARRAY['patients_migrator','patients_runtime','patients_app'] LOOP
         IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname=role_name) THEN
             EXECUTE format('CREATE ROLE %I LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',role_name);
         END IF;
         IF EXISTS (SELECT FROM pg_roles r WHERE rolname=role_name AND
             (NOT rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls OR
-             EXISTS (SELECT FROM pg_auth_members m WHERE m.member=r.oid))) THEN
+             (role_name NOT IN ('patients_migrator','patients_app') AND
+              EXISTS (SELECT FROM pg_auth_members m WHERE m.member=r.oid)))) THEN
             RAISE EXCEPTION 'Unsafe role: %',role_name;
         END IF;
         IF has_schema_privilege(role_name,'public','CREATE') OR
-            (role_name='patients_runtime' AND has_database_privilege(role_name,current_database(),'CREATE')) THEN
+            (role_name IN ('patients_runtime','patients_app') AND has_database_privilege(role_name,current_database(),'CREATE')) THEN
             RAISE EXCEPTION 'Unexpected CREATE privilege: %',role_name;
         END IF;
     END LOOP;
@@ -25,6 +26,18 @@ BEGIN
         WHERE n.nspname='patients' AND pg_get_userbyid(p.proowner)<>'patients_migrator') THEN
         RAISE EXCEPTION 'Patients objects have another owner; review ownership migration separately';
     END IF;
+    -- Annex J.4: domain roles without login; the migrator may only delegate the writer role to patients_app.
+    FOREACH role_name IN ARRAY ARRAY['patients_reader','patients_writer'] LOOP
+        IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname=role_name) THEN
+            EXECUTE format('CREATE ROLE %I NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS',role_name);
+        END IF;
+        IF EXISTS (SELECT FROM pg_roles WHERE rolname=role_name AND
+            (rolcanlogin OR rolsuper OR rolcreatedb OR rolcreaterole OR rolreplication OR rolbypassrls)) THEN
+            RAISE EXCEPTION 'Unsafe role: %',role_name;
+        END IF;
+    END LOOP;
+    GRANT patients_reader, patients_runtime TO patients_writer;
+    GRANT patients_writer TO patients_migrator WITH ADMIN OPTION, INHERIT FALSE, SET FALSE;
     FOREACH table_name IN ARRAY ARRAY['databasechangelog_patients','databasechangeloglock_patients'] LOOP
         IF EXISTS (SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
             WHERE n.nspname='public' AND c.relname=table_name AND
@@ -47,7 +60,7 @@ BEGIN
     INSERT INTO public.databasechangeloglock_patients (id,locked) VALUES (1,false) ON CONFLICT (id) DO NOTHING;
     REVOKE ALL ON public.databasechangelog_patients, public.databasechangeloglock_patients FROM PUBLIC;
     GRANT USAGE ON SCHEMA public TO patients_migrator;
-    EXECUTE format('GRANT CONNECT ON DATABASE %I TO patients_migrator, patients_runtime',current_database());
+    EXECUTE format('GRANT CONNECT ON DATABASE %I TO patients_migrator, patients_runtime, patients_app',current_database());
     IF EXISTS (SELECT FROM pg_namespace WHERE nspname='patients') THEN
         EXECUTE format('REVOKE CREATE ON DATABASE %I FROM patients_migrator',current_database());
     ELSE
