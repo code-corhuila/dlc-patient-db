@@ -10,20 +10,24 @@ its schema. Each environment has separate hosts, credentials and deployment appr
    It creates LOGIN roles `patients_migrator`, `patients_runtime` and `patients_app` (plus the NOLOGIN `patients_reader` and `patients_writer`) without elevated
    role attributes or memberships. Assign distinct passwords through the environment's
    secret manager. The SQL contains no passwords and installs no extensions.
-2. Copy `deploy/.env.environment.example` to a local ignored `deploy/dev.env`,
-   `deploy/qa.env` or `deploy/prod.env`. Set PG_ENVIRONMENT explicitly to dev, qa or prod,
-   the infrastructure endpoint/database/network and PG_MIGRATOR_PASSWORD_FILE to the
-   absolute path of that environment's migrator secret. The runtime secret stays with the API.
+2. Copy the example of the target environment, `deploy/env/dev.env.example`,
+   `deploy/env/qa.env.example` or `deploy/env/main.env.example`, to the ignored file without
+   `.example`, and set PG_MIGRATOR_PASSWORD_FILE to the absolute path of that environment's
+   migrator secret. Each file fixes its own PG_ENVIRONMENT (`prod` remains an alias of `main`),
+   runner project and engine host: Annex J.5.1 runs every environment as its own Compose
+   project (`dlc-dev`, `dlc-qa`, `dlc-main`) with its own container and volume, so
+   `dlc-<env>-dlc-postgres-1` is unique on the `platform` network. The runtime secret stays with the API.
+   In qa and main back up and verify the restore before migrating, and never remove the volume (J.5.4).
 3. Before other deployment steps, create the owner schema using the existing first changeset:
-   `docker compose --env-file deploy/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate update-count --count=1`
+   `docker compose --env-file deploy/env/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate update-count --count=1`
 4. The DBA re-runs the bootstrap immediately: schema ownership now suffices and database
    CREATE is revoked from the migrator. Verify the seal before continuing or starting the API.
 5. Before updating to query indexes, infrastructure provisions pg_trgm and grants its
    operator-class namespace USAGE to patients_migrator; see [query prerequisites](query-indexes.md).
    Apply and validate the remaining migrations with the same runner:
-   `docker compose --env-file deploy/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate validate`
-   `docker compose --env-file deploy/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate update`
-   Use the matching env file for qa/prod; contexts do not replace environment isolation.
+   `docker compose --env-file deploy/env/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate validate`
+   `docker compose --env-file deploy/env/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate update`
+   Use `deploy/env/qa.env` or `deploy/env/main.env` for the other environments; contexts do not replace environment isolation.
 
 The two canonical control tables stay in public: databasechangelog_patients and
 databasechangeloglock_patients. Bootstrap prepares only these technical tables,
@@ -35,7 +39,7 @@ Back up and verify restore before any transition of an existing installation.
 
 ## Verification and boundaries
 
-`python -B tooling/verify_migrations.py --environment=dev` (also qa/prod) uses a unique
+`python -B tooling/verify_migrations.py --environment=dev` (also qa/main/prod) uses a unique
 disposable PostgreSQL, three independent synthetic secrets and the actual secret-based
 runner. It checks repeatable bootstrap, unsafe roles/foreign ownership, invalid/missing
 environments, empty secrets, restricted ownership, upgrade through the delivered 26/27-change baselines to the current schema,
