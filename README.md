@@ -19,10 +19,15 @@ with an immutable request hash/response and at least seven days of retention.
 The local outbox stores patient lifecycle events and their publication metadata,
 with immutable facts and indexed pending batches.
 The inbox stores assignment events with event/source deduplication and local processing markers.
+Deactivation intents retain request identity, guard fingerprints and irreversible local outcomes;
+the cross-service guard adapter and atomic use-case orchestration remain pending.
 Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
 deactivation, HTTP replay handling, inbox consumer, broker relay and seeds remain pending.
 Explicit least-privilege runtime grants are included; see [runtime permissions](runtime-permissions.md).
 No clinical history, credentials, appointment or financial data belongs here.
+
+Ordered patient pages and the clarified name/document search have query indexes;
+see [query shapes, prerequisites and limits](query-indexes.md).
 
 ## Layout
 
@@ -84,6 +89,12 @@ Rollback checks reject non-monotonic migration timestamps before reversal;
 inspect host/database clock synchronization if this guard fails.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
+
+## Backup and restore
+
+Backup/restore verification uses a separate disposable database and authenticated runtime;
+see [recovery procedure and evidence limits](backup-restore.md). Run
+`python -B tooling/verify_migrations.py --environment=dev --backup-restore` with Docker.
 
 ## Contribution
 

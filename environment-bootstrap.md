@@ -18,7 +18,9 @@ its schema. Each environment has separate hosts, credentials and deployment appr
    `docker compose --env-file deploy/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate update-count --count=1`
 4. The DBA re-runs the bootstrap immediately: schema ownership now suffices and database
    CREATE is revoked from the migrator. Verify the seal before continuing or starting the API.
-5. Apply and validate the remaining migrations with the same runner:
+5. Before updating to query indexes, infrastructure provisions pg_trgm and grants its
+   operator-class namespace USAGE to patients_migrator; see [query prerequisites](query-indexes.md).
+   Apply and validate the remaining migrations with the same runner:
    `docker compose --env-file deploy/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate validate`
    `docker compose --env-file deploy/dev.env -f deploy/compose.environment.yml run --rm patients-db-migrate update`
    Use the matching env file for qa/prod; contexts do not replace environment isolation.
@@ -36,7 +38,7 @@ Back up and verify restore before any transition of an existing installation.
 `python -B tooling/verify_migrations.py --environment=dev` (also qa/prod) uses a unique
 disposable PostgreSQL, three independent synthetic secrets and the actual secret-based
 runner. It checks repeatable bootstrap, unsafe roles/foreign ownership, invalid/missing
-environments, empty secrets, restricted ownership, upgrade from the 26-change baseline,
+environments, empty secrets, restricted ownership, upgrade through the delivered 26/27-change baselines to the current schema,
 unchanged prior history/control-table OIDs, denied cross-owner/DDL/extension operations,
 repeat update and the existing authenticated runtime suite. CI runs the three contexts.
 The ordinary full migration/rollback job remains separate and uses the administrative

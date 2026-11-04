@@ -25,6 +25,7 @@ by another role, PUBLIC or later infrastructure changes.
 | emergency_contacts | SELECT, INSERT, DELETE; UPDATE name, relationship and phone only |
 | patient_audit | SELECT, INSERT only |
 | idempotency_records | SELECT, INSERT, DELETE; the existing retention trigger rejects premature deletion |
+| deactivation_operations | SELECT, INSERT; UPDATE guard_id, guard_token_hash and outcome only |
 | outbox_events / inbox_events | SELECT, INSERT; UPDATE status, attempts, next_retry_at and error_code only |
 
 Worker markers are stamped by invoker triggers; UPDATE grants on publication/processing
@@ -37,7 +38,7 @@ The grant-only rollback revokes exactly this increment's table/column/schema per
 it does not delete data, drop the externally managed role or change its credentials.
 Shared-environment recovery still requires reviewed forward corrections.
 
-Tests authenticate as the runtime login over TCP, exercise all six tables and worker
+Tests authenticate as the runtime login over TCP, exercise the owner tables and worker
 row locks, and reject foreign-owner/metadata access, persistent DDL, role escalation,
 trigger disabling, history rewrites and unexpected access to a future table. Temporary
 helpers use the disposable database's TEMP privilege; database/PUBLIC policy, deployment

@@ -77,3 +77,16 @@ databaseChangeLog:
         - sqlFile:
             path: ../../05_rollbacks/01_ddl/03_tables/006_create_inbox_events.rollback.sql
             relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-007
+      author: DanielPerez1822
+      labels: "deactivation-operations,ddl,tables"
+      comment: "Durable Patients deactivation intent and local outcome: tables."
+      changes:
+        - sqlFile:
+            path: 007_create_deactivation_operations.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/007_create_deactivation_operations.rollback.sql
+            relativeToChangelogFile: true
