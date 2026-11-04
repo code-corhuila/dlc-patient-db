@@ -435,6 +435,9 @@ class MigrationRebuildTest(unittest.TestCase):
                     "FROM patients.emergency_contact c))")
                 recorded = sql(history + " ORDER BY orderexecuted")
                 seeded = sql(data)
+                seed_sql = (ROOT / "02_dml/00_inserts/001_synthetic_patients.sql").read_text()
+                sql_script(seed_sql + seed_sql)  # Norm 5.2.5: reapplying the seed neither duplicates nor fails.
+                self.assertEqual(sql(data), seeded)
                 migrate("update", include_seeds=True)
                 self.assertEqual(sql(data), seeded)
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
