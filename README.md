@@ -60,7 +60,7 @@ real infrastructure bindings and deployment/restore evidence remain pending.
 
 The older `deploy/compose.yml` and `.env.example` retain the direct-credential interface
 used by the disposable verifier. Environment deployment uses
-`deploy/compose.environment.yml` and `deploy/.env.environment.example` instead.
+`deploy/compose.environment.yml` with one env file per environment in `deploy/env/` (dev, qa, main).
 
 ## Verify
 

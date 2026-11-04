@@ -37,11 +37,13 @@ SCHEMA_SMOKE = False
 ENVIRONMENT = None
 BACKUP_RESTORE = False
 SYNTHETIC_SEEDS = False
+# Annex J.5 names the production environment main; prod stays accepted as its alias.
+PRODUCTION = ("main", "prod")
 
 
 class MigrationRebuildTest(unittest.TestCase):
     def test_update_repeat_rollback_and_reapply_preserve_other_owners(self):
-        self.assertIn(ENVIRONMENT, (None, "dev", "qa", "prod"))
+        self.assertIn(ENVIRONMENT, (None, "dev", "qa", "main", "prod"))
         compose = ROOT / "deploy" / ("compose.environment.yml" if ENVIRONMENT else "compose.yml")
         POSTGRES_IMAGE = postgres_image(os.environ)
         print("Disposable PostgreSQL image: " + POSTGRES_IMAGE, flush=True)
@@ -440,9 +442,9 @@ class MigrationRebuildTest(unittest.TestCase):
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
             migrate("update", include_seeds=True)
-            expected = "39" if ENVIRONMENT == "prod" else "40"
+            expected = "39" if ENVIRONMENT in PRODUCTION else "40"
             self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
-            if ENVIRONMENT == "prod":
+            if ENVIRONMENT in PRODUCTION:
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
                 self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contact"), "0")
             else:
@@ -754,6 +756,6 @@ if __name__ == "__main__":
         sys.argv.remove("--environment=" + ENVIRONMENT)
     if BACKUP_RESTORE and (ENVIRONMENT != "dev" or SCHEMA_SMOKE):
         raise SystemExit("--backup-restore requires --environment=dev; it uses disposable databases only")
-    if SYNTHETIC_SEEDS and (ENVIRONMENT not in ("dev", "qa", "prod") or SCHEMA_SMOKE or BACKUP_RESTORE):
+    if SYNTHETIC_SEEDS and (ENVIRONMENT not in ("dev", "qa", "main", "prod") or SCHEMA_SMOKE or BACKUP_RESTORE):
         raise SystemExit("--synthetic-seeds requires one environment and cannot combine with other focused modes")
     unittest.main(verbosity=2)
