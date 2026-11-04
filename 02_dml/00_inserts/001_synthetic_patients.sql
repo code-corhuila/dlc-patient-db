@@ -1,4 +1,5 @@
 -- Deliberately fake snapshots, not API registrations or deactivation transitions.
+-- Upsert by identifier (Norm 5.2.5): reapplying never duplicates; a foreign document still fails.
 DO $$ BEGIN
     INSERT INTO patients.patient (patient_id,document_type,document_number,name,birth_date,phone,email,
         status,version,created_at,updated_at,created_by,updated_by)
@@ -8,11 +9,13 @@ DO $$ BEGIN
     FROM (VALUES
         ('f2000000-0000-4000-8000-000000000001','SYNTHETIC-PAT-001','Synthetic Active','ACTIVE'),
         ('f2000000-0000-4000-8000-000000000002','SYNTHETIC-PAT-002','Synthetic Inactive','INACTIVE')
-    ) p(id,document,name,status);
+    ) p(id,document,name,status)
+    ON CONFLICT (patient_id) DO NOTHING;
     INSERT INTO patients.emergency_contact (emergency_contact_id,patient_id,name,relationship,phone)
     SELECT id::uuid,'f2000000-0000-4000-8000-000000000001'::uuid,name,'Synthetic Relative','0000000000'
     FROM (VALUES
         ('f2100000-0000-4000-8000-000000000001','Synthetic Contact One'),
         ('f2100000-0000-4000-8000-000000000002','Synthetic Contact Two')
-    ) c(id,name);
+    ) c(id,name)
+    ON CONFLICT (emergency_contact_id) DO NOTHING;
 END; $$;
