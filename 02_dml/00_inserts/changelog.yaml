@@ -6,6 +6,7 @@ databaseChangeLog:
       labels: "synthetic-seeds,dml"
       comment: "Explicit non-production synthetic snapshots; no lifecycle events."
       runInTransaction: true
+      validCheckSum: "9:628ec48ca036cbf98296ebcde6d81f70"
       changes:
         - sqlFile:
             path: 001_synthetic_patients.sql
