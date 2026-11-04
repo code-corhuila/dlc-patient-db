@@ -71,9 +71,17 @@ BEGIN
 END; $$;
 DO $$ BEGIN
     IF to_regclass('patients.deactivation_operation') IS NOT NULL THEN
-        INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason)
-        VALUES ('b1000000-0000-4000-8000-000000000071','00000000-0000-4000-8000-000000000071',
-            '10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000071',2,'Synthetic intent');
+        -- Staged upgrades run this check before reason_code exists.
+        IF EXISTS (SELECT FROM pg_attribute WHERE attrelid='patients.deactivation_operation'::regclass
+                AND attname='reason_code' AND NOT attisdropped) THEN
+            INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason_code,reason)
+            VALUES ('b1000000-0000-4000-8000-000000000071','00000000-0000-4000-8000-000000000071',
+                '10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000071',2,'OTHER','Synthetic intent');
+        ELSE
+            INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason)
+            VALUES ('b1000000-0000-4000-8000-000000000071','00000000-0000-4000-8000-000000000071',
+                '10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000071',2,'Synthetic intent');
+        END IF;
         UPDATE patients.deactivation_operation SET guard_id='d1000000-0000-4000-8000-000000000071',guard_token_hash=repeat('a',64);
         UPDATE patients.deactivation_operation SET outcome='ABORTED';
         PERFORM operation_id FROM patients.deactivation_operation FOR UPDATE SKIP LOCKED;

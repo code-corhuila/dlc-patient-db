@@ -1,0 +1,4 @@
+DROP TRIGGER trg_deactivation_operation_reason_code ON patients.deactivation_operation;
+DROP FUNCTION patients.reject_reason_code_change() RESTRICT;
+ALTER TABLE patients.deactivation_operation DROP CONSTRAINT chk_deactivation_operation_reason_code;
+ALTER TABLE patients.deactivation_operation DROP COLUMN reason_code;
