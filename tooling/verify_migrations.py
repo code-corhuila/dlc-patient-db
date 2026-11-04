@@ -95,7 +95,7 @@ class MigrationRebuildTest(unittest.TestCase):
         legacy_support = to_legacy(support)
 
         def storage_checks():
-            for name in ("patient_identity", "emergency_contacts", "patient_audit", "idempotency_records", "outbox_events", "inbox_events", "deactivation_operations", "patient_query_indexes", "naming_conventions"):
+            for name in ("patient_identity", "emergency_contacts", "patient_audit", "idempotency_records", "outbox_events", "inbox_events", "deactivation_operations", "patient_query_indexes", "naming_conventions", "deactivation_invariant"):
                 print("Storage checks: " + name, flush=True)
                 fixture = inbox_support if name == "inbox_events" else ""
                 result = sql_script("BEGIN;\n" + support + fixture + (ROOT / f"tooling/tests/{name}.sql").read_text())
@@ -259,7 +259,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 migrate("update-count", "--count=1")
                 sql_script(bootstrap_sql)
                 migrate("update")
-                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "37")
+                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "38")
                 return
             for bad_environment in ("staging", ""):
                 env["PG_ENVIRONMENT"] = bad_environment
@@ -308,7 +308,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 sql("GRANT USAGE ON SCHEMA query_extensions TO patients_migrator")
             migrate("update")
             self.assertEqual(sql(history + " WHERE orderexecuted<=33 ORDER BY orderexecuted"), query_baseline)
-            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "37")
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "38")
             storage_checks()
             for query in (
                 "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='patients'",
@@ -401,7 +401,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 migrate("update")
                 history = role_sql("patients_migrator", env["PG_OWNER_TEST_PASSWORD"],
                     "SELECT count(*) FROM public.databasechangelog_patients;")
-                self.assertIn("37", history)
+                self.assertIn("38", history)
                 role_sql("patients_runtime", env["PG_RUNTIME_TEST_PASSWORD"], "BEGIN;\n" + support +
                     (ROOT / "tooling/tests/backup_restore_permissions.sql").read_text())
             finally:
@@ -423,7 +423,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
             migrate("update", include_seeds=True)
-            expected = "37" if ENVIRONMENT == "prod" else "38"
+            expected = "38" if ENVIRONMENT == "prod" else "39"
             self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
             if ENVIRONMENT == "prod":
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
@@ -669,8 +669,8 @@ class MigrationRebuildTest(unittest.TestCase):
             sql("CREATE EXTENSION pg_trgm WITH SCHEMA query_extensions")
             extension = sql("SELECT oid,extnamespace FROM pg_extension WHERE extname='pg_trgm'")
             migrate("update")
-            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 37)
-            migrate("rollback-count", "--count=4")
+            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 38)
+            migrate("rollback-count", "--count=5")
             self.assertEqual(query_index_count(), "0")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)

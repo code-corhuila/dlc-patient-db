@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-invariants-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,PAT-004,PAT-005,ddl,triggers,emergency-contacts,patient-audit,idempotency,outbox,inbox,deactivation-operations,query-indexes"
+      comment: "Deactivation commits atomically with its audit, PatientDeactivated event and finalized operation; checked at commit."
+      changes:
+        - sqlFile:
+            path: 001_deactivation_proof.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/12_invariants/001_deactivation_proof.rollback.sql
+            relativeToChangelogFile: true
