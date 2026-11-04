@@ -14,6 +14,8 @@ contract field limits and an indexed local patient reference with restricted del
 Append-only administrative audit records include actor, action, profile version,
 server time, field names and a required deactivation reason. See [data dictionary](data-dictionary.md).
 This is an increment of HU-PAT-001, not complete functional acceptance.
+The [readiness review](readiness.md) maps implemented checks, revision-linked evidence
+and open acceptance/deployment work; it is not a release approval.
 Completed retry outcomes are stored by principal, operation, resource and UUID key,
 with an immutable request hash/response and at least seven days of retention.
 The local outbox stores patient lifecycle events and their publication metadata,
@@ -22,7 +24,7 @@ The inbox stores assignment events with event/source deduplication and local pro
 Deactivation intents retain request identity, guard fingerprints and irreversible local outcomes;
 the cross-service guard adapter and atomic use-case orchestration remain pending.
 Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
-deactivation, HTTP replay handling, inbox consumer, broker relay and seeds remain pending.
+deactivation, HTTP replay handling, inbox consumer and broker relay remain pending.
 Explicit least-privilege runtime grants are included; see [runtime permissions](runtime-permissions.md).
 No clinical history, credentials, appointment or financial data belongs here.
 
@@ -31,7 +33,7 @@ see [query shapes, prerequisites and limits](query-indexes.md).
 
 ## Layout
 
-- `01_ddl/`: schema definitions; foreign keys will follow table creation.
+- `01_ddl/`: tables, restricted local foreign keys, functions, triggers and indexes.
 - `02_dml/`, `03_dcl/`, `04_tcl/`: seeds, permissions and transaction operations.
 - `05_rollbacks/`: explicit SQL reversals, without cross-owner cascading drops.
 - `changelog/changelog-master.yaml`: the single Liquibase entry point.
@@ -85,8 +87,9 @@ Runtime checks authenticate a separate synthetic login and verify allowed DML, d
 persistent DDL, metadata/foreign-owner access and grant rollback. Missing/unsafe roles
 block migration; future tables receive no automatic runtime grants.
 Only its uniquely named test container, network and migration snapshot volume are removed.
-Rollback checks reject non-monotonic migration timestamps before reversal;
-inspect host/database clock synchronization if this guard fails.
+Every historical, seed and full rollback is checked before invoking Liquibase;
+invalid counts, ambiguous order or non-monotonic timestamps block execution and print
+the recorded history. See [rollback preflight and diagnostics](rollback-verification.md).
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
 
@@ -95,6 +98,12 @@ forward corrections. Never edit an applied changeset.
 Backup/restore verification uses a separate disposable database and authenticated runtime;
 see [recovery procedure and evidence limits](backup-restore.md). Run
 `python -B tooling/verify_migrations.py --environment=dev --backup-restore` with Docker.
+
+## Synthetic seeds
+
+Synthetic profile/contact snapshots are available only with explicit dev/qa contexts;
+see [seed scope and protected rollback](synthetic-seeds.md). Verify with
+`python -B tooling/verify_migrations.py --environment=dev --synthetic-seeds`.
 
 ## Contribution
 
