@@ -157,7 +157,7 @@ python -B tooling/verify_migrations.py --environment=prod --synthetic-seeds
 git diff --check
 ```
 
-The [CI workflow](.github/workflows/ci.yml) defines these eight jobs. The full suite
+The [rebuild verification workflow](.github/workflows/db-ci.yml) (Norm 5.2.8) defines these eight jobs. The full suite
 covers empty-store, delivered-version upgrades, immutable history, individual/full
 rollback, rebuild, storage invariants, permissions and concurrency. A schema-smoke
 run is narrower and cannot substitute for it. Base/recovery suites exclude the seed;
