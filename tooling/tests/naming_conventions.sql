@@ -8,7 +8,8 @@ BEGIN
     WHERE c.relnamespace='patients'::regnamespace AND c.relkind='r' AND c.relname ~ 's$';
     IF offender IS NOT NULL THEN RAISE EXCEPTION 'tables must be singular: %',offender; END IF;
     SELECT string_agg(conname,', ') INTO offender FROM pg_constraint
-    WHERE connamespace='patients'::regnamespace AND conname !~ '^(pk|fk|chk)_';
+    WHERE connamespace='patients'::regnamespace
+        AND conname !~ CASE contype WHEN 't' THEN '^trg_' ELSE '^(pk|fk|chk)_' END;
     IF offender IS NOT NULL THEN RAISE EXCEPTION 'constraints must use pk_, fk_ or chk_: %',offender; END IF;
     SELECT string_agg(i.indexname,', ') INTO offender FROM pg_indexes i
     WHERE i.schemaname='patients' AND i.indexname !~ '^(pk|idx|uk)_';
