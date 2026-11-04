@@ -18,6 +18,21 @@ from rollback_verification import RollbackPreflightError, run_rollback
 
 
 ROOT = Path(__file__).resolve().parents[1]
+# The engine pinned by dlc-infra-postgres; override only with another pinned postgres tag.
+INFRASTRUCTURE_POSTGRES_IMAGE = "postgres:17.11-alpine3.24"
+
+
+def postgres_image(environ):
+    image = environ.get("PATIENTS_POSTGRES_IMAGE", INFRASTRUCTURE_POSTGRES_IMAGE)
+    if not re.fullmatch(r"postgres:\d+\.\d+-alpine(\d+\.\d+)?", image):
+        raise ValueError("PATIENTS_POSTGRES_IMAGE must be a pinned postgres:<major>.<minor>-alpine tag")
+    return image
+
+
+def schema_digest(dump):
+    # pg_dump 17.6+ and 16.10+ wrap every dump in a random \restrict key; it is not schema.
+    lines = (line for line in dump.splitlines() if not re.match(r"\\(un)?restrict ", line))
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
 SCHEMA_SMOKE = False
 ENVIRONMENT = None
 BACKUP_RESTORE = False
@@ -28,6 +43,8 @@ class MigrationRebuildTest(unittest.TestCase):
     def test_update_repeat_rollback_and_reapply_preserve_other_owners(self):
         self.assertIn(ENVIRONMENT, (None, "dev", "qa", "prod"))
         compose = ROOT / "deploy" / ("compose.environment.yml" if ENVIRONMENT else "compose.yml")
+        POSTGRES_IMAGE = postgres_image(os.environ)
+        print("Disposable PostgreSQL image: " + POSTGRES_IMAGE, flush=True)
         self.assertTrue(compose.is_file(), "Patients migration runner is missing")
         suffix = uuid.uuid4().hex[:12]
         network = f"patients-ci-{suffix}"
@@ -355,7 +372,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 definition = run("docker", "exec", container, "pg_dump", "-U", "postgres",
                     "-d", database, "--schema-only")
                 definitions[database] = definition
-                return hashlib.sha256(definition.encode()).hexdigest(), rows
+                return schema_digest(definition), rows
 
             sql_script("BEGIN;\n" + support + inbox_support +
                 (ROOT / "tooling/tests/backup_restore_fixture.sql").read_text())
@@ -494,7 +511,7 @@ class MigrationRebuildTest(unittest.TestCase):
             # Snapshot canonical migration files once; avoid repeated Windows bind-mount reads.
             run("docker", "volume", "create", snapshot)
             run("docker", "run", "--rm", "--entrypoint", "sh", "-v", f"{ROOT}:/source:ro",
-                "-v", f"{snapshot}:/snapshot", "postgres:16.6-alpine", "-ec",
+                "-v", f"{snapshot}:/snapshot", POSTGRES_IMAGE, "-ec",
                 "cp -R /source/01_ddl /source/02_dml /source/03_dcl /source/04_tcl "
                 "/source/05_rollbacks /source/changelog /snapshot/ && mkdir /snapshot/deploy && "
                 "cp /source/deploy/run-migration.sh /snapshot/deploy/")
@@ -503,9 +520,9 @@ class MigrationRebuildTest(unittest.TestCase):
                 "-e", "POSTGRES_PASSWORD=" + env["PG_MIGRATION_PASSWORD"],
                 "--health-cmd", "pg_isready -U postgres -d patients_ci",
                 "--health-interval", "1s", "--health-timeout", "3s",
-                "--health-retries", "30", "postgres:16.6-alpine")
+                "--health-retries", "30", POSTGRES_IMAGE)
             run("docker", "run", "--rm", "--network", network,
-                "postgres:16.6-alpine", "sh", "-ec",
+                POSTGRES_IMAGE, "sh", "-ec",
                 f"for i in $(seq 1 60); do pg_isready -q -t 1 -h {container} "
                 "-U postgres -d patients_ci && exit 0; sleep 1; done; exit 1")
             sql("CREATE SCHEMA bootstrap_probe; "
