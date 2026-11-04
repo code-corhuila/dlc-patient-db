@@ -70,6 +70,8 @@ Requires Python 3.12+ (standard library only) and a running Linux Docker engine.
 python -B tooling/verify_migrations.py
 ```
 
+The disposable engine is `postgres:17.11-alpine3.24`, the image pinned by `dlc-infra-postgres`;
+set `PATIENTS_POSTGRES_IMAGE` to another pinned `postgres:<major>.<minor>-alpine` tag to compare.
 For a focused empty-store/storage check, add `--schema-smoke`; this does not run
 historical upgrade or rollback verification. CI keeps the full default command.
 
