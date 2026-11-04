@@ -16,7 +16,7 @@ SELECT pg_temp.expect_rejection($q$SELECT pg_temp.register_patient(1, 'OTHER', '
                                 '23505', 'pk_patient');
 SELECT pg_temp.expect_rejection($q$UPDATE patients.patient
     SET patient_id = '00000000-0000-4000-8000-000000000099'$q$,
-    '23514', 'ck_patients_identity_immutable');
+    '23514', 'chk_patient_identity_immutable');
 -- Different types, leading zeroes and internal separators remain distinct.
 SELECT pg_temp.register_patient(2, 'OTHER', '00ab-12.3 4');
 SELECT pg_temp.register_patient(3, 'CC', '0ab-12.3 4');

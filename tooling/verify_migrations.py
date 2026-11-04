@@ -84,8 +84,13 @@ class MigrationRebuildTest(unittest.TestCase):
         # Upgrade stages run before the naming migration, so they still see the delivered plural names.
 
         def to_legacy(script):
-            return re.sub(r"\bpatients\.(" + "|".join(legacy_tables) + r")\b",
-                          lambda m: "patients." + legacy_tables[m[1]], script)
+            script = re.sub(r"\bpatients\.(" + "|".join(legacy_tables) + r")\b",
+                            lambda m: "patients." + legacy_tables[m[1]], script)
+            for singular, plural in legacy_tables.items():
+                keep = "(?!_audit)" if singular == "patient" else ""
+                script = re.sub(r"\b(chk|fk|pk|uk|idx|trg)_" + singular + keep + r"(?=_|\b)",
+                                lambda m, p=plural: ("ck" if m[1] == "chk" else m[1]) + "_" + p, script)
+            return script.replace("idx_inbox_events_pending", "ix_inbox_events_pending")
 
         legacy_support = to_legacy(support)
 
@@ -250,7 +255,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 migrate("update-count", "--count=1")
                 sql_script(bootstrap_sql)
                 migrate("update")
-                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "35")
+                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "36")
                 return
             for bad_environment in ("staging", ""):
                 env["PG_ENVIRONMENT"] = bad_environment
@@ -299,7 +304,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 sql("GRANT USAGE ON SCHEMA query_extensions TO patients_migrator")
             migrate("update")
             self.assertEqual(sql(history + " WHERE orderexecuted<=33 ORDER BY orderexecuted"), query_baseline)
-            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "35")
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), "36")
             storage_checks()
             for query in (
                 "SELECT pg_get_userbyid(nspowner) FROM pg_namespace WHERE nspname='patients'",
@@ -392,7 +397,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 migrate("update")
                 history = role_sql("patients_migrator", env["PG_OWNER_TEST_PASSWORD"],
                     "SELECT count(*) FROM public.databasechangelog_patients;")
-                self.assertIn("35", history)
+                self.assertIn("36", history)
                 role_sql("patients_runtime", env["PG_RUNTIME_TEST_PASSWORD"], "BEGIN;\n" + support +
                     (ROOT / "tooling/tests/backup_restore_permissions.sql").read_text())
             finally:
@@ -414,7 +419,7 @@ class MigrationRebuildTest(unittest.TestCase):
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
             migrate("update", include_seeds=True)
-            expected = "35" if ENVIRONMENT == "prod" else "36"
+            expected = "36" if ENVIRONMENT == "prod" else "37"
             self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
             if ENVIRONMENT == "prod":
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
@@ -656,8 +661,8 @@ class MigrationRebuildTest(unittest.TestCase):
             sql("CREATE EXTENSION pg_trgm WITH SCHEMA query_extensions")
             extension = sql("SELECT oid,extnamespace FROM pg_extension WHERE extname='pg_trgm'")
             migrate("update")
-            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 35)
-            migrate("rollback-count", "--count=2")
+            self.assertEqual(int(sql(f"SELECT count(*) FROM {history}")), 36)
+            migrate("rollback-count", "--count=3")
             self.assertEqual(query_index_count(), "0")
             self.assertEqual(sql(patient_query), prior_patient)
             self.assertEqual(sql(contact_query), prior_contact)
