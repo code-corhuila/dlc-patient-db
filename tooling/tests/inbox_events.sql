@@ -24,8 +24,8 @@ BEGIN
         ('payload','{}','chk_inbox_event_payload'),
         ('payload','[]','chk_inbox_event_payload'),
         ('assignment_version','0','chk_inbox_event_assignment_version'),
-        ('status','"PROCESSED"','ck_inbox_events_initial'),
-        ('attempts','-1','ck_inbox_events_initial'),
+        ('status','"PROCESSED"','chk_inbox_event_initial'),
+        ('attempts','-1','chk_inbox_event_initial'),
         ('next_retry_at','null','chk_inbox_event_delivery')
     ) AS cases(field,value,constraint_name) LOOP
         PERFORM pg_temp.expect_rejection(format('SELECT pg_temp.inbox_candidate(jsonb_build_object(%L,%L::jsonb))',
@@ -35,9 +35,9 @@ END; $$;
 SELECT pg_temp.expect_rejection($q$SELECT pg_temp.inbox_candidate(jsonb_build_object('payload',
     (SELECT payload || '{"clinicalHistory":"forbidden"}' FROM patients.inbox_event)))$q$,'23514','chk_inbox_event_payload');
 SELECT pg_temp.expect_rejection($q$SELECT pg_temp.inbox_candidate('{"assignment_version":2}')$q$,'23514','chk_inbox_event_payload');
-SELECT pg_temp.expect_rejection('DELETE FROM patients.inbox_event','23514','ck_inbox_events_immutable');
-SELECT pg_temp.expect_rejection('TRUNCATE patients.inbox_event','23514','ck_inbox_events_immutable');
-SELECT pg_temp.expect_rejection($q$UPDATE patients.inbox_event SET payload='{}'$q$,'23514','ck_inbox_events_immutable');
+SELECT pg_temp.expect_rejection('DELETE FROM patients.inbox_event','23514','chk_inbox_event_immutable');
+SELECT pg_temp.expect_rejection('TRUNCATE patients.inbox_event','23514','chk_inbox_event_immutable');
+SELECT pg_temp.expect_rejection($q$UPDATE patients.inbox_event SET payload='{}'$q$,'23514','chk_inbox_event_immutable');
 -- A synthetic local effect and its inbox marker must roll back together.
 CREATE TEMP TABLE consumer_effects (event_id uuid PRIMARY KEY);
 DO $$ DECLARE rejected text;
@@ -61,11 +61,11 @@ SELECT pg_temp.inbox_candidate('{"event_type":"ClinicalAssignmentEnded","assignm
     "endedBy":"10000000-0000-4000-8000-000000000001","version":2}}');
 UPDATE patients.inbox_event SET status='FAILED',attempts=1,next_retry_at=NULL,error_code='CACHE_UNAVAILABLE';
 UPDATE patients.inbox_event SET status='PENDING',attempts=2,next_retry_at=statement_timestamp(),error_code=NULL;
-SELECT pg_temp.expect_rejection('UPDATE patients.inbox_event SET attempts=1','23514','ck_inbox_events_delivery');
+SELECT pg_temp.expect_rejection('UPDATE patients.inbox_event SET attempts=1','23514','chk_inbox_event_delivery');
 INSERT INTO consumer_effects SELECT event_id FROM patients.inbox_event;
 UPDATE patients.inbox_event SET status='PROCESSED',attempts=3,next_retry_at=NULL;
 SELECT pg_temp.expect_rejection($q$UPDATE patients.inbox_event SET status='PENDING',
-    next_retry_at=statement_timestamp(),processed_at=NULL$q$,'23514','ck_inbox_events_delivery');
+    next_retry_at=statement_timestamp(),processed_at=NULL$q$,'23514','chk_inbox_event_delivery');
 DO $$ BEGIN
     IF (SELECT count(*) FROM consumer_effects)<>2 OR
        (SELECT count(*) FROM patients.inbox_event WHERE status='PROCESSED' AND processed_at>=CURRENT_TIMESTAMP)<>2 THEN

@@ -21,10 +21,10 @@ SELECT pg_temp.expect_rejection($q$INSERT INTO patients.outbox_event SELECT (jso
     'aggregate_id','00000000-0000-4000-8000-000000000099','payload',jsonb_set(e.payload,'{patientId}',
     '"00000000-0000-4000-8000-000000000099"')))).* FROM patients.outbox_event e$q$,
     '23503','fk_outbox_event_patient');
-SELECT pg_temp.expect_rejection('DELETE FROM patients.outbox_event', '23514', 'ck_outbox_events_immutable');
-SELECT pg_temp.expect_rejection('TRUNCATE patients.outbox_event', '23514', 'ck_outbox_events_immutable');
+SELECT pg_temp.expect_rejection('DELETE FROM patients.outbox_event', '23514', 'chk_outbox_event_immutable');
+SELECT pg_temp.expect_rejection('TRUNCATE patients.outbox_event', '23514', 'chk_outbox_event_immutable');
 SELECT pg_temp.expect_rejection($q$UPDATE patients.outbox_event SET payload = '{}'$q$,
-                                '23514','ck_outbox_events_immutable');
+                                '23514','chk_outbox_event_immutable');
 DO $$
 DECLARE field text; sample record;
 BEGIN
@@ -39,9 +39,9 @@ BEGIN
         ('producer','"clinical-service"','chk_outbox_event_producer'),
         ('payload','{}','chk_outbox_event_payload'),
         ('payload','[]','chk_outbox_event_payload'),
-        ('status','"PUBLISHED"','ck_outbox_events_initial'),
+        ('status','"PUBLISHED"','chk_outbox_event_initial'),
         ('next_retry_at','null','chk_outbox_event_delivery'),
-        ('attempts','-1','ck_outbox_events_initial')
+        ('attempts','-1','chk_outbox_event_initial')
     ) AS cases(field,value,constraint_name) LOOP
         PERFORM pg_temp.expect_rejection(format('SELECT pg_temp.outbox_candidate(%L,%L::jsonb)',
             sample.field,sample.value),'23514',sample.constraint_name);
@@ -77,10 +77,10 @@ END; $$;
 UPDATE patients.outbox_event SET status='FAILED',attempts=1,next_retry_at=NULL,error_code='BROKER_UNAVAILABLE';
 UPDATE patients.outbox_event SET status='PENDING',attempts=2,next_retry_at=statement_timestamp();
 SELECT pg_temp.expect_rejection('UPDATE patients.outbox_event SET attempts=1',
-                                '23514','ck_outbox_events_delivery');
+                                '23514','chk_outbox_event_delivery');
 UPDATE patients.outbox_event SET status='PUBLISHED',attempts=3,next_retry_at=NULL,error_code=NULL;
 SELECT pg_temp.expect_rejection($q$UPDATE patients.outbox_event SET status='PENDING',
-    next_retry_at=statement_timestamp(),published_at=NULL$q$,'23514','ck_outbox_events_delivery');
+    next_retry_at=statement_timestamp(),published_at=NULL$q$,'23514','chk_outbox_event_delivery');
 DO $$ BEGIN
     IF (SELECT count(*) FROM patients.outbox_event)<>3 OR NOT EXISTS (SELECT FROM patients.outbox_event WHERE status='PUBLISHED' AND attempts=3
         AND published_at >= CURRENT_TIMESTAMP AND payload->>'status'='ACTIVE') THEN

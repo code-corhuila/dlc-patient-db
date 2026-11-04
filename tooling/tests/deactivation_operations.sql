@@ -18,8 +18,8 @@ BEGIN
     FOR sample IN SELECT * FROM (VALUES
         ('{"expected_version":0}','chk_deactivation_operation_version'),
         ('{"reason":" "}','chk_deactivation_operation_reason'),
-        ('{"outcome":"ABORTED"}','ck_deactivation_operations_initial'),
-        ('{"guard_token_hash":"raw-proof"}','ck_deactivation_operations_initial')
+        ('{"outcome":"ABORTED"}','chk_deactivation_operation_initial'),
+        ('{"guard_token_hash":"raw-proof"}','chk_deactivation_operation_initial')
     ) s(value,expected) LOOP
         PERFORM pg_temp.expect_rejection(format('SELECT pg_temp.operation_candidate(%L)',sample.value),'23514',sample.expected);
     END LOOP;
@@ -27,9 +27,9 @@ END; $$;
 -- Same key for another actor is a separate request; no global per-patient pending restriction.
 SELECT pg_temp.operation_candidate('{"actor_id":"10000000-0000-4000-8000-000000000002","idempotency_key":"c1000000-0000-4000-8000-000000000001"}');
 SELECT pg_temp.expect_rejection('DELETE FROM patients.patient','23503','fk_deactivation_operation_patient');
-SELECT pg_temp.expect_rejection('DELETE FROM patients.deactivation_operation','23514','ck_deactivation_operations_immutable');
-SELECT pg_temp.expect_rejection('TRUNCATE patients.deactivation_operation','23514','ck_deactivation_operations_immutable');
-SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET reason='Changed'$q$,'23514','ck_deactivation_operations_immutable');
+SELECT pg_temp.expect_rejection('DELETE FROM patients.deactivation_operation','23514','chk_deactivation_operation_immutable');
+SELECT pg_temp.expect_rejection('TRUNCATE patients.deactivation_operation','23514','chk_deactivation_operation_immutable');
+SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET reason='Changed'$q$,'23514','chk_deactivation_operation_immutable');
 SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET guard_id='d1000000-0000-4000-8000-000000000001'$q$,'23514','chk_deactivation_operation_guard');
 UPDATE patients.deactivation_operation SET guard_id='d1000000-0000-4000-8000-000000000001',guard_token_hash=repeat('a',64)
 WHERE actor_id='10000000-0000-4000-8000-000000000001';
@@ -59,9 +59,9 @@ DO $$ BEGIN
 END; $$;
 SELECT pg_temp.finish_deactivation();
 UPDATE patients.deactivation_operation SET outcome='ABORTED' WHERE guard_id IS NULL;
-SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET outcome='PENDING'$q$,'23514','ck_deactivation_operations_transition');
-SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET outcome='ABORTED' WHERE outcome='FINALIZED'$q$,'23514','ck_deactivation_operations_transition');
-SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET guard_id='d1000000-0000-4000-8000-000000000002' WHERE guard_id IS NOT NULL$q$,'23514','ck_deactivation_operations_immutable');
+SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET outcome='PENDING'$q$,'23514','chk_deactivation_operation_transition');
+SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET outcome='ABORTED' WHERE outcome='FINALIZED'$q$,'23514','chk_deactivation_operation_transition');
+SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET guard_id='d1000000-0000-4000-8000-000000000002' WHERE guard_id IS NOT NULL$q$,'23514','chk_deactivation_operation_immutable');
 DO $$ DECLARE original_completion timestamptz; BEGIN
     SELECT completed_at INTO original_completion FROM patients.deactivation_operation WHERE guard_id IS NOT NULL;
     UPDATE patients.deactivation_operation SET guard_token_hash=repeat('c',64) WHERE guard_id IS NOT NULL;
