@@ -26,9 +26,14 @@ with immutable facts and indexed pending batches.
 The inbox stores assignment events with event/source deduplication and local processing markers.
 Deactivation intents retain request identity, guard fingerprints and irreversible local outcomes;
 the cross-service guard adapter and atomic use-case orchestration remain pending.
-Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
-deactivation, HTTP replay handling, inbox consumer and broker relay remain pending.
-Explicit least-privilege runtime grants are included; see [runtime permissions](runtime-permissions.md).
+The database rejects at commit a deactivation without its audit, PatientDeactivated event and
+finalized operation (see [data dictionary](data-dictionary.md)). Optimistic update orchestration,
+HTTP replay handling, inbox consumer and broker relay belong to the API and remain pending there.
+Explicit least-privilege runtime grants and the Annex J domain roles (`patients_reader`,
+`patients_writer`, `patients_app`) are included; see [runtime permissions](runtime-permissions.md).
+Names follow Norm 5.2.5 (singular tables, `pk_`/`fk_`/`chk_`/`idx_`), checked by the verifier.
+Index `idx_patient_name_document_search` predates the `CONCURRENTLY` rule (5.2.7) and is not
+rebuilt, because an applied changeset is never edited (5.2.3); new indexes use `CONCURRENTLY`.
 No clinical history, credentials, appointment or financial data belongs here.
 
 Ordered patient pages and the clarified name/document search have query indexes;
