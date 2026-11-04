@@ -1,0 +1,31 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-dcl-grants-001
+      author: DanielPerez1822
+      labels: "runtime,dcl,grants"
+      comment: "Explicit runtime access; identity and credentials are externally provisioned."
+      preConditions:
+        - onFail: HALT
+        - onError: HALT
+        - onFailMessage: "Provision a clean patients_runtime role without elevated privileges, memberships or DDL access."
+        - sqlCheck:
+            expectedResult: "1"
+            sql: |
+              SELECT count(*) FROM pg_roles r WHERE r.rolname='patients_runtime'
+                AND NOT (r.rolsuper OR r.rolcreatedb OR r.rolcreaterole OR r.rolreplication OR r.rolbypassrls)
+                AND NOT EXISTS (SELECT FROM pg_auth_members m WHERE m.member=r.oid)
+                AND NOT has_database_privilege(r.oid,current_database(),'CREATE')
+                AND NOT has_schema_privilege(r.oid,'public','CREATE')
+                AND NOT has_schema_privilege(r.oid,'patients','USAGE,CREATE')
+                AND NOT EXISTS (SELECT FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+                  WHERE n.nspname='patients' AND c.relkind IN ('r','p') AND
+                    (has_table_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+                     OR has_any_column_privilege(r.oid,c.oid,'SELECT,INSERT,UPDATE,REFERENCES')))
+      changes:
+        - sqlFile:
+            path: 001_patients_runtime.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/03_dcl/01_grants/001_patients_runtime.rollback.sql
+            relativeToChangelogFile: true

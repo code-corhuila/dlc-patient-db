@@ -20,7 +20,8 @@ The local outbox stores patient lifecycle events and their publication metadata,
 with immutable facts and indexed pending batches.
 The inbox stores assignment events with event/source deduplication and local processing markers.
 Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
-deactivation, HTTP replay handling, inbox consumer, broker relay, seeds and runtime grants remain pending.
+deactivation, HTTP replay handling, inbox consumer, broker relay and seeds remain pending.
+Explicit least-privilege runtime grants are included; see [runtime permissions](runtime-permissions.md).
 No clinical history, credentials, appointment or financial data belongs here.
 
 ## Layout
@@ -34,18 +35,17 @@ No clinical history, credentials, appointment or financial data belongs here.
 
 ## Run migrations
 
-Requires Docker Compose and an existing PostgreSQL instance/network provisioned
-by `dlc-infra-postgres`. Copy `.env.example` to `.env` and supply local values.
-The migration credential must be provisioned separately from the runtime user.
-This bootstrap needs schema creation and access to its own Liquibase control tables
-in `public`: `databasechangelog_patients` and `databasechangeloglock_patients`.
-Those are technical metadata; business tables belong only to `patients`.
-Owner-scoped grants and integration with infrastructure remain to be verified.
+Follow [environment bootstrap](environment-bootstrap.md) for dev/qa/prod with
+`patients_migrator`, a mounted secret and an explicit environment context.
+Infrastructure provisions the shared PostgreSQL; the authorized DBA provisions the
+roles and the existing owner-specific Liquibase control tables in public.
+Create the schema through its canonical first changeset, then revoke database CREATE
+before applying business migrations. Existing-installation ownership transitions,
+real infrastructure bindings and deployment/restore evidence remain pending.
 
-```sh
-docker compose --env-file .env -f deploy/compose.yml run --rm patients-db-migrate validate
-docker compose --env-file .env -f deploy/compose.yml run --rm patients-db-migrate update
-```
+The older `deploy/compose.yml` and `.env.example` retain the direct-credential interface
+used by the disposable verifier. Environment deployment uses
+`deploy/compose.environment.yml` and `deploy/.env.environment.example` instead.
 
 ## Verify
 
@@ -76,7 +76,12 @@ Outbox checks cover event identity, payload keys, publication transitions, local
 transaction rollback and disjoint row-lock claims; no broker delivery is claimed.
 Inbox checks cover both deduplication keys, concurrent delivery, immutable facts,
 retry/processing states and atomic local effect markers. A foreign-owner fixture must survive.
+Runtime checks authenticate a separate synthetic login and verify allowed DML, denied
+persistent DDL, metadata/foreign-owner access and grant rollback. Missing/unsafe roles
+block migration; future tables receive no automatic runtime grants.
 Only its uniquely named test container, network and migration snapshot volume are removed.
+Rollback checks reject non-monotonic migration timestamps before reversal;
+inspect host/database clock synchronization if this guard fails.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
 
