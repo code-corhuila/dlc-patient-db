@@ -9,10 +9,15 @@ ADR-007 (Liquibase), ADR-008 (domain-owned migrations), `06-data/` and
 
 Includes the bootstrap and administrative `patients.patients` identity table,
 contract field limits, immutable identifier and normalized document uniqueness
-across active/inactive profiles. See [data dictionary](data-dictionary.md).
+across active/inactive profiles. Emergency contacts support zero or more entries,
+contract field limits and an indexed local patient reference with restricted deletion.
+Append-only administrative audit records include actor, action, profile version,
+server time, field names and a required deactivation reason. See [data dictionary](data-dictionary.md).
 This is an increment of HU-PAT-001, not complete functional acceptance.
-Emergency contacts, dedicated audit, optimistic update orchestration, guarded
-deactivation, idempotency, inbox/outbox, seeds and runtime grants remain pending.
+Completed retry outcomes are stored by principal, operation, resource and UUID key,
+with an immutable request hash/response and at least seven days of retention.
+Atomic profile/audit/outbox writes, optimistic update orchestration, guarded
+deactivation, HTTP replay handling, inbox/outbox, seeds and runtime grants remain pending.
 No clinical history, credentials, appointment or financial data belongs here.
 
 ## Layout
@@ -51,8 +56,18 @@ The test creates disposable PostgreSQL with synthetic credentials, validates Com
 and Liquibase, applies migrations twice, checks unchanged history, reverses all
 recorded changes and reapplies them. It also upgrades from the delivered bootstrap,
 checks patient constraints and races two normalized identities using separate
-connections while the first insert is uncommitted. A foreign-owner fixture must survive.
-Only its uniquely named test container and network are removed.
+connections while the first insert is uncommitted. Contact checks cover orphan rejection,
+required fields, limits, cardinality and retention after deactivation. Upgrade and
+increment-only rollback must preserve an existing patient and prior migration history.
+Audit checks reject destructive writes, unsafe field metadata and missing deactivation
+reasons; audit-only rollback also preserves existing contacts and prior history.
+Local transaction checks verify that failed audit inserts or later failures roll
+back both profile and audit changes; API/outbox orchestration remains pending.
+Retry checks cover scope separation, concurrent keys, immutable results, retention
+and journal/profile rollback. Migration files are copied unchanged to a disposable
+Linux volume for verification; the production Compose runner retains its read-only bind mount.
+A foreign-owner fixture must survive.
+Only its uniquely named test container, network and migration snapshot volume are removed.
 Full rollback is for disposable tests; shared-environment recovery uses reviewed
 forward corrections. Never edit an applied changeset.
 

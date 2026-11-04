@@ -1,4 +1,4 @@
-# Patients identity storage — HU-PAT-001 / PAT-001
+# Patients administrative storage — HU-PAT-001 / PAT-001
 
 Canonical model and boundaries: [Patients data model](https://github.com/code-corhuila/dlc-docs/blob/main/09-microservices/services/03-patients-service/data-model.md),
 [modeling conventions](https://github.com/code-corhuila/dlc-docs/blob/main/06-data/modeling-conventions.md)
@@ -20,6 +20,78 @@ This dictionary maps the implemented storage increment; it does not replace dlc-
 | created_at / updated_at | timestamptz | Required; default to the transaction timestamp |
 | created_by / updated_by | uuid | Required actor references; API derives them from authorized identity |
 
+## Emergency contacts — HU-PAT-001
+
+`patients.emergency_contacts` belongs to the same administrative aggregate.
+
+| Column | Type | Storage rule |
+|---|---|---|
+| emergency_contact_id | uuid | Required primary key supplied by the API |
+| patient_id | uuid | Required local reference to patients.patients |
+| name | text | Required, nonblank, at most 255 characters |
+| relationship | text | Required, nonblank, at most 80 characters; no closed catalog is specified |
+| phone | text | Required, nonblank, at most 40 characters; semantic phone validation belongs to API |
+
+A patient can have zero or multiple contacts; matching names or phone numbers are
+not treated as duplicate identities. `fk_emergency_contacts_patient` rejects orphans
+and uses ON UPDATE RESTRICT / ON DELETE RESTRICT; it never cascades patient deletion.
+`idx_emergency_contacts_patient_id` supports the reference and contact lookup.
+Changing patient status does not remove contacts. This does not replace API authorization,
+the guarded deactivation protocol or the pending runtime privilege restrictions.
+
+## Patient audit — HU-PAT-001
+
+`patients.patient_audit` retains administrative facts with these storage fields:
+
+| Column | Type | Storage rule |
+|---|---|---|
+| audit_id | uuid | Immutable primary key supplied by the API |
+| patient_id | uuid | Required local patient reference; ON UPDATE/DELETE RESTRICT |
+| actor_id | uuid | Required IAM actor reference without a cross-schema foreign key |
+| action | text | REGISTERED, PROFILE_UPDATED or DEACTIVATED; local audit vocabulary |
+| patient_version | integer | Required positive profile version; API must correlate the owning write |
+| recorded_at | timestamptz | Always replaced with statement_timestamp() by the insert trigger |
+| changed_fields | text[] | Required one-dimensional array of approved administrative field names; defaults to empty |
+| reason | text | Nullable except for DEACTIVATED; when present, nonblank and at most 1000 characters |
+
+Metadata permits only documentType, documentNumber, name, birthDate, phone, email,
+address, emergencyContacts and status. It stores no profile snapshots or arbitrary
+clinical payload. Reasons remain protected owner data; callers must minimize their content.
+The history index starts with patient_id, then recorded_at and audit_id.
+UPDATE, DELETE and TRUNCATE are rejected, including a cascading parent TRUNCATE.
+This is explicit audit storage, not automatic auditing of every profile write.
+The API must supply an authorized actor and write profile/audit/outbox atomically.
+Runtime grants and retention operations remain separate work; no purge is introduced.
+
+## Idempotency records — HU-PAT-001
+
+This storage mapping implements the scope/retention rules in
+[API design decisions](https://github.com/code-corhuila/dlc-docs/blob/main/07-api/design-decisions.md#idempotency-and-optimistic-updates).
+`patients.idempotency_records` stores completed outcomes, not pending guard intents.
+
+| Column | Type | Storage rule |
+|---|---|---|
+| actor_kind | text | STAFF or SERVICE, derived from the authenticated principal |
+| actor_subject | text | Canonical verified subject, nonblank, at most 255 characters |
+| operation | text | Canonical owner operation identifier, nonblank, at most 100 characters |
+| target_resource | text | Canonical resource scope, nonblank, at most 255 characters; creation uses the collection scope |
+| idempotency_key | uuid | Retry key; the primary key includes all four scope fields above |
+| request_hash | text | SHA-256 digest of the canonical request, 64 lowercase hexadecimal characters |
+| response_status / response_body | smallint / jsonb | Original status (200–599) and JSON object; no raw request body is stored |
+| response_location | text | Optional original Location; nonblank when supplied, without CR/LF |
+| created_at / expires_at | timestamptz | Server-stamped creation and finite expiry at least 168 hours later |
+
+Staff subjects use the canonical staff UUID string; service subjects use their verified
+service identity. The API must derive/canonicalize the complete scope, hash the same
+request representation on retries, and compare hashes before returning saved results
+or IDEMPOTENCY_CONFLICT. It must reauthenticate and reauthorize every retry.
+Saved response bodies may contain administrative PII and remain protected Patients data.
+Records cannot be updated or truncated; deletion is allowed only after expiry.
+The expiry index supports bounded cleanup, but this increment configures no purge job.
+The service must commit the result with its owning write/audit/outbox in one transaction;
+database transaction tests are not evidence that API orchestration is implemented.
+Expiration neither releases coordination guards nor removes permanent document uniqueness.
+
 ## Document equality
 
 Owner clarification approved on 2026-10-24: equality uses `upper(btrim(value))`
@@ -34,6 +106,7 @@ Document types remain text because dlc-docs defines no closed type catalog.
 Actor references have no foreign keys into IAM. There are no cross-schema queries,
 clinical fields or financial fields. Identifier protection is a local trigger;
 normal profile changes remain available without changing patient_id.
-Runtime privileges, authoritative deactivation and append-only audit are separate
-increments. Column defaults do not authenticate actors or prevent audit tampering.
+Runtime privileges, authoritative deactivation and atomic business/audit/outbox writes
+are separate increments. Profile defaults do not authenticate actors; audit triggers
+protect ordinary DML but do not replace restrictions on DDL-capable migration credentials.
 SQL constraints complement application/domain validation; they do not authorize access.
