@@ -16,7 +16,7 @@ SELECT pg_temp.expect_rejection($q$SELECT pg_temp.audit_candidate('audit_id',
     '"30000000-0000-4000-8000-000000000001"')$q$, '23505', 'pk_patient_audit');
 SELECT pg_temp.expect_rejection($q$SELECT pg_temp.audit_candidate('patient_id',
     '"00000000-0000-4000-8000-000000000099"')$q$, '23503', 'fk_patient_audit_patient');
-SELECT pg_temp.expect_rejection('DELETE FROM patients.patients', '23503', 'fk_patient_audit_patient');
+SELECT pg_temp.expect_rejection('DELETE FROM patients.patient', '23503', 'fk_patient_audit_patient');
 SELECT pg_temp.expect_rejection('UPDATE patients.patient_audit SET patient_version = 2',
                                 '23514', 'ck_patient_audit_append_only');
 SELECT pg_temp.expect_rejection('DELETE FROM patients.patient_audit',
@@ -27,7 +27,7 @@ SELECT pg_temp.expect_rejection('TRUNCATE patients.patient_audit',
 DO $$ DECLARE blocked boolean := false; guard text;
 BEGIN
     BEGIN
-        TRUNCATE patients.patients CASCADE;
+        TRUNCATE patients.patient CASCADE;
     EXCEPTION WHEN check_violation THEN
         GET STACKED DIAGNOSTICS guard = CONSTRAINT_NAME;
         IF guard NOT IN ('ck_patient_audit_append_only','ck_outbox_events_immutable') THEN RAISE; END IF;
@@ -44,14 +44,14 @@ BEGIN
                                         '23502', field);
     END LOOP;
     FOR sample IN SELECT * FROM (VALUES
-        ('action', '"UNKNOWN"', 'ck_patient_audit_action'),
-        ('patient_version', '0', 'ck_patient_audit_version'),
-        ('changed_fields', '["diagnosis"]', 'ck_patient_audit_changed_fields'),
-        ('changed_fields', '["documentNumber=123"]', 'ck_patient_audit_changed_fields'),
-        ('changed_fields', '[null]', 'ck_patient_audit_changed_fields'),
-        ('changed_fields', '[["name"]]', 'ck_patient_audit_changed_fields'),
-        ('reason', '" "', 'ck_patient_audit_reason'),
-        ('action', '"DEACTIVATED"', 'ck_patient_audit_deactivation_reason')
+        ('action', '"UNKNOWN"', 'chk_patient_audit_action'),
+        ('patient_version', '0', 'chk_patient_audit_version'),
+        ('changed_fields', '["diagnosis"]', 'chk_patient_audit_changed_fields'),
+        ('changed_fields', '["documentNumber=123"]', 'chk_patient_audit_changed_fields'),
+        ('changed_fields', '[null]', 'chk_patient_audit_changed_fields'),
+        ('changed_fields', '[["name"]]', 'chk_patient_audit_changed_fields'),
+        ('reason', '" "', 'chk_patient_audit_reason'),
+        ('action', '"DEACTIVATED"', 'chk_patient_audit_deactivation_reason')
     ) AS cases(field, value, constraint_name) LOOP
         PERFORM pg_temp.expect_rejection(format('SELECT pg_temp.audit_candidate(%L, %L::jsonb)',
             sample.field, sample.value), '23514', sample.constraint_name);
@@ -59,23 +59,23 @@ BEGIN
 END;
 $$;
 SELECT pg_temp.expect_rejection($q$SELECT pg_temp.audit_candidate('reason',
-    to_jsonb(repeat('R', 1001)))$q$, '23514', 'ck_patient_audit_reason');
+    to_jsonb(repeat('R', 1001)))$q$, '23514', 'chk_patient_audit_reason');
 -- A rejected audit insert rolls back the profile change in the same local transaction.
 DO $$
 DECLARE rejected boolean := false; failure_constraint text;
 BEGIN
     BEGIN
-        UPDATE patients.patients SET name = 'Uncommitted profile', version = 2;
+        UPDATE patients.patient SET name = 'Uncommitted profile', version = 2;
         PERFORM pg_temp.audit_candidate('actor_id', NULL);
     EXCEPTION WHEN not_null_violation THEN
         rejected := true;
     END;
-    IF NOT rejected OR EXISTS (SELECT FROM patients.patients WHERE version <> 1
+    IF NOT rejected OR EXISTS (SELECT FROM patients.patient WHERE version <> 1
         OR name <> 'Synthetic Patient') OR (SELECT count(*) FROM patients.patient_audit) <> 1 THEN
         RAISE EXCEPTION 'Failed audit did not roll back its profile transaction';
     END IF;
     BEGIN
-        UPDATE patients.patients SET name = 'Another uncommitted profile', version = 2;
+        UPDATE patients.patient SET name = 'Another uncommitted profile', version = 2;
         PERFORM pg_temp.audit_candidate('reason', '"Synthetic accepted reason"');
         -- Force a later failure after both writes; neither may survive.
         PERFORM pg_temp.audit_candidate('reason', '"Duplicate audit identity"');
@@ -83,7 +83,7 @@ BEGIN
         GET STACKED DIAGNOSTICS failure_constraint = CONSTRAINT_NAME;
         IF failure_constraint <> 'pk_patient_audit' THEN RAISE; END IF;
     END;
-    IF EXISTS (SELECT FROM patients.patients WHERE version <> 1 OR name <> 'Synthetic Patient')
+    IF EXISTS (SELECT FROM patients.patient WHERE version <> 1 OR name <> 'Synthetic Patient')
         OR (SELECT count(*) FROM patients.patient_audit) <> 1 THEN
         RAISE EXCEPTION 'Later failure retained a partial profile/audit write';
     END IF;
@@ -97,7 +97,7 @@ VALUES ('30000000-0000-4000-8000-000000000002', '00000000-0000-4000-8000-0000000
        ('30000000-0000-4000-8000-000000000003', '00000000-0000-4000-8000-000000000001',
         '10000000-0000-4000-8000-000000000001', 'DEACTIVATED', 3,
         ARRAY['status'], repeat('R', 1000), '1900-01-01');
-UPDATE patients.patients SET status = 'INACTIVE';
+UPDATE patients.patient SET status = 'INACTIVE';
 DO $$
 BEGIN
     IF (SELECT count(*) FROM patients.patient_audit) <> 3 OR

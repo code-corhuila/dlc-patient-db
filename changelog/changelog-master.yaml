@@ -11,3 +11,6 @@ databaseChangeLog:
   - include:
       file: ../04_tcl/changelog.yaml
       relativeToChangelogFile: true
+  - include:
+      file: ../01_ddl/11_rename/changelog.yaml
+      relativeToChangelogFile: true
