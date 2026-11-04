@@ -27,13 +27,10 @@ The inspected dlc-docs baseline is 31fb316d8209fbf1838feea9ecf0192c4b551585:
 - [HU-PAT-001](https://github.com/code-corhuila/dlc-docs/blob/31fb316d8209fbf1838feea9ecf0192c4b551585/04-requirements/user-stories.md), [PAT-001 to PAT-005](https://github.com/code-corhuila/dlc-docs/blob/31fb316d8209fbf1838feea9ecf0192c4b551585/02-domain/entities-and-rules.md) and [traceability](https://github.com/code-corhuila/dlc-docs/blob/31fb316d8209fbf1838feea9ecf0192c4b551585/04-requirements/traceability-matrix.md).
 - [Migration strategy](https://github.com/code-corhuila/dlc-docs/blob/31fb316d8209fbf1838feea9ecf0192c4b551585/06-data/migration-strategy.md) and [Patients runbook](https://github.com/code-corhuila/dlc-docs/blob/31fb316d8209fbf1838feea9ecf0192c4b551585/09-microservices/services/03-patients-service/runbook.md).
 
-The local dlc-docs working tree also has uncommitted search clarifications in
-`07-api/contracts/openapi/patients-service.yaml`, `07-api/contract-reviews/patients.md`
-and `09-microservices/services/03-patients-service/data-model.md`, on
-`codex/patient-search-contract`. They are owner-provided draft context, not part of
-the pinned commit or proof of canonical review. This review leaves them untouched.
-Reconcile them with the canonical Docs PR/revision and record approval through a
-governed docs/* -> main flow before accepting search; local changes do not prove remote status.
+The search clarification that lived on the unpublished `codex/patient-search-contract`
+branch was reconciled through [dlc-docs#144](https://github.com/code-corhuila/dlc-docs/pull/144)
+(docs/* -> main): search covers name and document number, and deactivation carries a closed
+`reasonCode`.
 The dated repository-evidence register's earlier 404 observations do not prove absence
 of the DB implementation now inspected; update that register via a separate Docs PR.
 
@@ -157,7 +154,7 @@ python -B tooling/verify_migrations.py --environment=prod --synthetic-seeds
 git diff --check
 ```
 
-The [CI workflow](.github/workflows/ci.yml) defines these eight jobs. The full suite
+The [rebuild verification workflow](.github/workflows/db-ci.yml) (Norm 5.2.8) defines these eight jobs. The full suite
 covers empty-store, delivered-version upgrades, immutable history, individual/full
 rollback, rebuild, storage invariants, permissions and concurrency. A schema-smoke
 run is narrower and cannot substitute for it. Base/recovery suites exclude the seed;

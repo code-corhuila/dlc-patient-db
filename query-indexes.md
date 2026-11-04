@@ -1,13 +1,14 @@
 # Patients query indexes
 
-Source: dlc-docs Patients OpenAPI, owner data model and search clarification of 2026-11-02
-(companion branch codex/patient-search-contract). Contract approval and API tests remain required.
+Source: dlc-docs Patients OpenAPI and owner data model; the search scope (case-insensitive partial
+match over name and document number) is approved in [dlc-docs#144](https://github.com/code-corhuila/dlc-docs/pull/144).
+API tests remain required.
 
 | Index | Supported path |
 |---|---|
-| idx_patients_created_at_patient_id | Stable createdAt/id ascending pages without status |
-| idx_patients_status_created_at_patient_id | Status equality followed by the same stable order |
-| idx_patients_name_document_search | Multicolumn GIN on lower(name), lower(document_number), using pg_trgm |
+| idx_patient_created_at_patient_id | Stable createdAt/id ascending pages without status |
+| idx_patient_status_created_at_patient_id | Status equality followed by the same stable order |
+| idx_patient_name_document_search | Multicolumn GIN on lower(name), lower(document_number), using pg_trgm |
 
 Administrative search is a literal substring in name OR document number. Lowercase the
 term, preserve accents/spaces/punctuation, and escape backslash, % and _ before adding

@@ -91,3 +91,39 @@ deployment/recovery evidence remain with the responsible owners in readiness.
 Any Docs change uses its own governed PR; this branch does not modify that repository.
 Closing this DB issue does not close HU-PAT-001 or authorize promotion/release.
 There is no approved percentage rubric; no completion percentage is claimed.
+
+## Update 2026-11-03: delivered persistence and qa promotion
+
+Revisions: `develop` [6fee9cf](https://github.com/code-corhuila/dlc-patient-db/commit/6fee9cfc2c32e4714a7e454e33ef31bff8934045)
+(after #45) and `qa` [2ad6ef7](https://github.com/code-corhuila/dlc-patient-db/commit/2ad6ef70c6740756ad949199bd3fcaae2586d206)
+(after #44, same tree as `develop` after #43). Docs: [dlc-docs#144](https://github.com/code-corhuila/dlc-docs/pull/144).
+
+| Increment | PRs | Evidence |
+|---|---|---|
+| Norm 5.2.5 naming (singular tables, `chk_`/`idx_`) and protection labels | #18, #19 | `naming_conventions.sql`; retroactive RED comments on each PR |
+| Annex J roles `patients_reader`/`patients_writer`/`patients_app` | #20; infra in dlc-infra-postgres#5 | `domain_roles.sql`, authenticated as `patients_app` |
+| Commit-time atomic deactivation (PAT-004/005) | #21 | `deactivation_invariant.sql` |
+| Idempotent synthetic seed (Norm 5.2.5) | #22 | Double application in the seed verifier |
+| Closed `reasonCode` | #23 (contract in dlc-docs#144) | `deactivation_operations.sql` |
+| Verification on the infrastructure PostgreSQL 17.11 | #43 | Unit tests with RED/GREEN; restrict-key fix |
+| Per-environment settings (dev, qa, main) | #45 | `test_environment_examples.py` with RED/GREEN |
+| Promotion to `qa` | #24, #34–#42, #44 | Each lot equals its `develop` point; verifier per lot |
+
+Local results on `postgres:17.11-alpine3.24`: default verifier, `--environment=dev|qa|main|prod`,
+backup/restore, synthetic seeds and 14 unit tests passed. A smoke run against the real
+`dlc-infra-postgres` instance (bootstrap twice, migration with the environment runner,
+`patients_app` login, rejected bare deactivation at commit, complete deactivation) passed.
+
+| Issue criterion | Result |
+|---|---|
+| Own profile, normalized uniqueness, state, retained history and outbox in `patients` | Delivered and verified |
+| Empty-store and previous-version migration; constraints, indexes and recovery | Delivered and verified |
+| Owner-only runtime/migration access; no unrelated schema or duplicate changelog | Delivered and verified |
+| PR records validation and unresolved decisions without claiming HU Done | Recorded in each PR |
+
+Still outside this issue: the API and portal tasks of HU-PAT-001, `dlc-infra-postgres` qa
+promotion and per-environment `COMPOSE_PROJECT_NAME`, `main` promotion, remote CI (jobs are
+not started while the organization's Actions billing is locked) and a check against Annex A,
+which is not available in the workspace. Disclosed deviations: the synthetic seed changeset
+was edited with `validCheckSum` (5.2.3), index 008 predates the `CONCURRENTLY` rule (5.2.7),
+and RED evidence for #18–#23 is retroactive.
