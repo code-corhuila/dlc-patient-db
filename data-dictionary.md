@@ -185,6 +185,7 @@ because ADR-017 reconciliation stores the rotated token before resolving the gua
 | Fields | Contract |
 |---|---|
 | operation_id / patient_id | Stable operation UUID / restricted local patient FK |
+| reason_code | Closed code `ADMINISTRATIVE`, `DUPLICATE_RECORD`, `PATIENT_REQUEST` or `OTHER` (`chk_deactivation_operation_reason_code`); immutable; the only reason published in `PatientDeactivated` |
 | actor_id / idempotency_key | Required UUIDs; request uniqueness is actor + patient + key for deactivation |
 | expected_version / reason | Immutable request values: positive profile version and nonblank reason, 1-1000 characters |
 | guard_id / guard_token_hash | Both absent before acquisition; external guard UUID and lowercase SHA-256 fingerprint together afterward |

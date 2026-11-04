@@ -16,8 +16,8 @@ VALUES ('50000000-0000-4000-8000-000000000099','00000000-0000-4000-8000-00000000
     "status":"ACTIVE","registeredAt":"2026-01-01T00:00:00Z","registeredBy":"10000000-0000-4000-8000-000000000001"}',
     '60000000-0000-4000-8000-000000000099','70000000-0000-4000-8000-000000000099');
 SELECT pg_temp.receive_assignment('80000000-0000-4000-8000-000000000099');
-INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason)
+INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason_code,reason)
 VALUES ('b1000000-0000-4000-8000-000000000099','00000000-0000-4000-8000-000000000099',
-    '10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000099',1,'Synthetic recovery intent');
+    '10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000099',1,'ADMINISTRATIVE','Synthetic recovery intent');
 UPDATE patients.deactivation_operation SET guard_id='d1000000-0000-4000-8000-000000000099',guard_token_hash=repeat('b',64);
 COMMIT;

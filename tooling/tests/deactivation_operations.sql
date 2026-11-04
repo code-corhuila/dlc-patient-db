@@ -1,7 +1,7 @@
 SELECT pg_temp.register_patient(1,'CC','DEACT-01');
-INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason)
+INSERT INTO patients.deactivation_operation (operation_id,patient_id,actor_id,idempotency_key,expected_version,reason_code,reason)
 VALUES ('b1000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000001',
-    '10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',1,'Administrative closure');
+    '10000000-0000-4000-8000-000000000001','c1000000-0000-4000-8000-000000000001',1,'ADMINISTRATIVE','Administrative closure');
 CREATE FUNCTION pg_temp.operation_candidate(changes jsonb) RETURNS void LANGUAGE sql AS $$
     INSERT INTO patients.deactivation_operation SELECT (jsonb_populate_record(NULL::patients.deactivation_operation,
         to_jsonb(o)||'{"operation_id":"b1000000-0000-4000-8000-000000000099","idempotency_key":"c1000000-0000-4000-8000-000000000099"}'||changes)).*
@@ -18,6 +18,8 @@ BEGIN
     FOR sample IN SELECT * FROM (VALUES
         ('{"expected_version":0}','chk_deactivation_operation_version'),
         ('{"reason":" "}','chk_deactivation_operation_reason'),
+        ('{"reason_code":null}','chk_deactivation_operation_reason_code'),
+        ('{"reason_code":"UNKNOWN"}','chk_deactivation_operation_reason_code'),
         ('{"outcome":"ABORTED"}','chk_deactivation_operation_initial'),
         ('{"guard_token_hash":"raw-proof"}','chk_deactivation_operation_initial')
     ) s(value,expected) LOOP
@@ -30,6 +32,7 @@ SELECT pg_temp.expect_rejection('DELETE FROM patients.patient','23503','fk_deact
 SELECT pg_temp.expect_rejection('DELETE FROM patients.deactivation_operation','23514','chk_deactivation_operation_immutable');
 SELECT pg_temp.expect_rejection('TRUNCATE patients.deactivation_operation','23514','chk_deactivation_operation_immutable');
 SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET reason='Changed'$q$,'23514','chk_deactivation_operation_immutable');
+SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET reason_code='OTHER'$q$,'23514','chk_deactivation_operation_immutable');
 SELECT pg_temp.expect_rejection($q$UPDATE patients.deactivation_operation SET guard_id='d1000000-0000-4000-8000-000000000001'$q$,'23514','chk_deactivation_operation_guard');
 UPDATE patients.deactivation_operation SET guard_id='d1000000-0000-4000-8000-000000000001',guard_token_hash=repeat('a',64)
 WHERE actor_id='10000000-0000-4000-8000-000000000001';
