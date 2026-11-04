@@ -18,5 +18,8 @@ databaseChangeLog:
       file: ../01_ddl/12_invariants/changelog.yaml
       relativeToChangelogFile: true
   - include:
+      file: ../01_ddl/13_alter/changelog.yaml
+      relativeToChangelogFile: true
+  - include:
       file: ../02_dml/changelog.yaml
       relativeToChangelogFile: true
