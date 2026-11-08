@@ -19,3 +19,20 @@ databaseChangeLog:
             path: ../../05_rollbacks/02_dml/00_inserts/001_synthetic_patients.rollback.sql
             relativeToChangelogFile: true
             splitStatements: false
+  - changeSet:
+      id: patients-dml-synthetic-002
+      author: DanielPerez1822
+      context: "(@dev or @qa) and !prod"
+      labels: "synthetic-seeds,dml"
+      comment: "Removes the synthetic snapshots so dev/qa hold only data registered through the API."
+      runInTransaction: true
+      changes:
+        - sqlFile:
+            path: 002_remove_synthetic_patients.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: 001_synthetic_patients.sql
+            relativeToChangelogFile: true
+            splitStatements: false
