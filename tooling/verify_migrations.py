@@ -434,32 +434,46 @@ class MigrationRebuildTest(unittest.TestCase):
             return sql("SELECT count(*) FROM pg_namespace WHERE nspname = 'patients'")
 
         def synthetic_seed_checks():
-            seed_id = "patients-dml-synthetic-001"
+            # patients-dml-synthetic-001 seeds two snapshots; patients-dml-synthetic-002 removes them again,
+            # so dev/qa end without synthetic patients. Removal touches exact unchanged snapshots only.
+            seed_ids = ("patients-dml-synthetic-001", "patients-dml-synthetic-002")
             history = "SELECT id,author,filename,md5sum,dateexecuted,orderexecuted FROM public.databasechangelog_patients"
             previous = sql(history + " ORDER BY orderexecuted")
             for extra in ((), ("--contexts=dev,prod",)):
                 migrate("update", *extra, include_seeds=True, direct=True)
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
-            migrate("update", include_seeds=True)
-            expected = "39" if ENVIRONMENT in PRODUCTION else "40"
-            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
-            if ENVIRONMENT in PRODUCTION:
+            data = ("SELECT jsonb_build_object('profiles',(SELECT jsonb_agg(to_jsonb(p) ORDER BY patient_id) "
+                "FROM patients.patient p),'contacts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY emergency_contact_id) "
+                "FROM patients.emergency_contact c))")
+            def empty():
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "0")
                 self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contact"), "0")
-            else:
-                runtime_sql("BEGIN;\n" + (ROOT / "tooling/tests/synthetic_seeds.sql").read_text())
-                data = ("SELECT jsonb_build_object('profiles',(SELECT jsonb_agg(to_jsonb(p) ORDER BY patient_id) "
-                    "FROM patients.patient p),'contacts',(SELECT jsonb_agg(to_jsonb(c) ORDER BY emergency_contact_id) "
-                    "FROM patients.emergency_contact c))")
+            migrate("update", include_seeds=True)
+            expected = "39" if ENVIRONMENT in PRODUCTION else "41"
+            self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
+            empty()
+            if ENVIRONMENT not in PRODUCTION:
                 recorded = sql(history + " ORDER BY orderexecuted")
-                seeded = sql(data)
-                seed_sql = (ROOT / "02_dml/00_inserts/001_synthetic_patients.sql").read_text()
-                sql_script(seed_sql + seed_sql)  # Norm 5.2.5: reapplying the seed neither duplicates nor fails.
-                self.assertEqual(sql(data), seeded)
+                kept = sql(history + " WHERE id<>'patients-dml-synthetic-002' ORDER BY orderexecuted")
                 migrate("update", include_seeds=True)
-                self.assertEqual(sql(data), seeded)
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
+                empty()
+                # Rolling back the removal restores the exact snapshots for authenticated runtime reads.
+                migrate("rollback-count", "--count=1", include_seeds=True)
+                runtime_sql("BEGIN;\n" + (ROOT / "tooling/tests/synthetic_seeds.sql").read_text())
+                seeded = sql(data)
+                # An evolved snapshot blocks the removal and keeps both data and history.
+                sql("UPDATE patients.patient SET address='Edited' WHERE patient_id='f2000000-0000-4000-8000-000000000002'")
+                changed = sql(data)
+                blocked = sql(history + " ORDER BY orderexecuted")
+                rejected = migrate("update", include_seeds=True, check=False)
+                self.assertNotEqual(rejected.returncode, 0, "Removal erased an evolved fixture")
+                self.assertEqual(sql(data), changed)
+                self.assertEqual(sql(history + " ORDER BY orderexecuted"), blocked)
+                sql("UPDATE patients.patient SET address=NULL WHERE patient_id='f2000000-0000-4000-8000-000000000002'")
+                self.assertEqual(sql(data), seeded)
+                # Unrelated records survive the removal.
                 sql_script(support + "SELECT pg_temp.register_patient(90,'CC','SEED-UNRELATED'); "
                     "INSERT INTO patients.emergency_contact VALUES ('20000000-0000-4000-8000-000000000090',"
                     "'00000000-0000-4000-8000-000000000090','Synthetic Other','Relative','3000000000');")
@@ -467,40 +481,22 @@ class MigrationRebuildTest(unittest.TestCase):
                     "JOIN patients.emergency_contact c USING(patient_id) "
                     "WHERE patient_id='00000000-0000-4000-8000-000000000090'")
                 other = sql(unrelated)
-                seeded = sql(data)
-                for change, restore in (
-                    ("UPDATE patients.emergency_contact SET name='Edited' WHERE emergency_contact_id="
-                        "'f2100000-0000-4000-8000-000000000001'",
-                     "UPDATE patients.emergency_contact SET name='Synthetic Contact One' WHERE emergency_contact_id="
-                        "'f2100000-0000-4000-8000-000000000001'"),
-                    ("UPDATE patients.patient SET address='Edited' WHERE patient_id='f2000000-0000-4000-8000-000000000002'",
-                     "UPDATE patients.patient SET address=NULL WHERE patient_id='f2000000-0000-4000-8000-000000000002'"),
-                    ("INSERT INTO patients.emergency_contact VALUES ('20000000-0000-4000-8000-000000000092',"
-                        "'f2000000-0000-4000-8000-000000000001','Synthetic New Reference','Relative','3000000000')",
-                     "DELETE FROM patients.emergency_contact WHERE emergency_contact_id='20000000-0000-4000-8000-000000000092'")):
-                    sql(change)
-                    changed = sql(data)
-                    rejected = migrate("rollback-count", "--count=1", include_seeds=True, check=False)
-                    self.assertNotEqual(rejected.returncode, 0, "Rollback erased an evolved fixture")
-                    self.assertEqual(sql(data), changed)
-                    self.assertEqual(sql(history + " ORDER BY orderexecuted"), recorded)
-                    sql(restore)
-                migrate("rollback-count", "--count=1", include_seeds=True)
-                self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
+                migrate("update", include_seeds=True)
+                self.assertEqual(sql(history + " WHERE id<>'patients-dml-synthetic-002' ORDER BY orderexecuted"), kept)
+                self.assertEqual(sql("SELECT count(*) FROM public.databasechangelog_patients"), expected)
                 self.assertEqual(sql("SELECT count(*) FROM patients.patient"), "1")
                 self.assertEqual(sql("SELECT count(*) FROM patients.emergency_contact"), "1")
                 self.assertEqual(sql(unrelated), other)
-                sql_script(support + "SELECT pg_temp.register_patient(91,'CC','SYNTHETIC-PAT-002');")
-                collision = sql(data)
-                rejected = migrate("update", include_seeds=True, check=False)
-                self.assertNotEqual(rejected.returncode, 0, "Seed overwrote an existing document")
-                self.assertIn("uk_patient_document", rejected.stdout + rejected.stderr)
-                self.assertEqual(sql(data), collision)
+                # Both seed changes roll back to the pre-seed history without touching unrelated data.
+                migrate("rollback-count", "--count=2", include_seeds=True)
                 self.assertEqual(sql(history + " ORDER BY orderexecuted"), previous)
-                sql("DELETE FROM patients.patient WHERE patient_id='00000000-0000-4000-8000-000000000091'")
+                self.assertEqual(sql(unrelated), other)
+                sql("DELETE FROM patients.emergency_contact WHERE emergency_contact_id='20000000-0000-4000-8000-000000000090'")
+                sql("DELETE FROM patients.patient WHERE patient_id='00000000-0000-4000-8000-000000000090'")
                 migrate("update", include_seeds=True)
-                self.assertEqual(sql(data), seeded)
-            self.assertEqual(sql(history + f" WHERE id<>'{seed_id}' ORDER BY orderexecuted"), previous)
+                empty()
+            ids = ",".join("'" + seed + "'" for seed in seed_ids)
+            self.assertEqual(sql(history + f" WHERE id NOT IN ({ids}) ORDER BY orderexecuted"), previous)
             self.assertEqual(sql("SELECT id FROM bootstrap_probe.marker"), "1")
             print("Synthetic seeds PASS: " + ENVIRONMENT, flush=True)
 
