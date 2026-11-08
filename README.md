@@ -113,7 +113,8 @@ see [recovery procedure and evidence limits](backup-restore.md). Run
 
 ## Synthetic seeds
 
-Synthetic profile/contact snapshots are available only with explicit dev/qa contexts;
+The synthetic profile/contact snapshots of `patients-dml-synthetic-001` are removed again by
+`patients-dml-synthetic-002`, so dev/qa end with no synthetic patients. Both run only with explicit dev/qa contexts;
 see [seed scope and protected rollback](synthetic-seeds.md). Verify with
 `python -B tooling/verify_migrations.py --environment=dev --synthetic-seeds`.
 

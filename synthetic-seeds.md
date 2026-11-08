@@ -1,5 +1,11 @@
 # Synthetic Patients seeds
 
+**Removed (patients-dml-synthetic-002).** dev and qa now hold only patients registered through
+the Patients API. Changeset `patients-dml-synthetic-002` (same `dev or qa` context, never prod)
+deletes the two exact snapshots below and aborts with SQLSTATE 55000 if one of them changed or
+gained a reference; unrelated records stay. Its rollback re-inserts the snapshots. The history
+of `patients-dml-synthetic-001` is kept unchanged. The rest of this page describes that original seed.
+
 Sources: dlc-docs `06-data/migration-strategy.md` execution rules,
 `10-devops/environments.md` and the Patients owner data model/runbook.
 Applied DDL remains unchanged. The new owner-local changeset is
