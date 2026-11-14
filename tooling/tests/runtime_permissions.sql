@@ -22,7 +22,7 @@ VALUES ('30000000-0000-4000-8000-000000000071','00000000-0000-4000-8000-00000000
 INSERT INTO patients.idempotency_record (actor_kind,actor_subject,operation,target_resource,
     idempotency_key,request_hash,response_status,response_body) VALUES
     ('SERVICE','runtime-test','register','/patients','40000000-0000-4000-8000-000000000071',repeat('a',64),201,'{}');
-SELECT pg_temp.expect_rejection('DELETE FROM patients.idempotency_record','23514','ck_idempotency_records_retention');
+SELECT pg_temp.expect_rejection('DELETE FROM patients.idempotency_record','23514','chk_idempotency_record_retention');
 INSERT INTO patients.outbox_event (event_id,aggregate_id,event_type,occurred_at,payload,correlation_id,causation_id)
 VALUES ('50000000-0000-4000-8000-000000000071','00000000-0000-4000-8000-000000000071',
     'PatientProfileUpdated',statement_timestamp(),'{"patientId":"00000000-0000-4000-8000-000000000071",

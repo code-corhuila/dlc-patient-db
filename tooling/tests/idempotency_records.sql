@@ -20,15 +20,15 @@ SELECT pg_temp.expect_rejection($q$SELECT pg_temp.retry_candidate('idempotency_k
 SELECT pg_temp.expect_rejection($q$SELECT pg_temp.retry_candidate('request_hash', to_jsonb(repeat('b',64)),
     '40000000-0000-4000-8000-000000000001')$q$, '23505', 'pk_idempotency_record');
 SELECT pg_temp.expect_rejection($q$UPDATE patients.idempotency_record SET request_hash = repeat('b', 64)$q$,
-                                '23514', 'ck_idempotency_records_immutable');
+                                '23514', 'chk_idempotency_record_immutable');
 SELECT pg_temp.expect_rejection($q$UPDATE patients.idempotency_record SET response_body = '{"changed":true}'$q$,
-                                '23514', 'ck_idempotency_records_immutable');
+                                '23514', 'chk_idempotency_record_immutable');
 SELECT pg_temp.expect_rejection('UPDATE patients.idempotency_record SET expires_at = clock_timestamp()',
-                                '23514', 'ck_idempotency_records_immutable');
+                                '23514', 'chk_idempotency_record_immutable');
 SELECT pg_temp.expect_rejection('DELETE FROM patients.idempotency_record',
-                                '23514', 'ck_idempotency_records_retention');
+                                '23514', 'chk_idempotency_record_retention');
 SELECT pg_temp.expect_rejection('TRUNCATE patients.idempotency_record',
-                                '23514', 'ck_idempotency_records_immutable');
+                                '23514', 'chk_idempotency_record_immutable');
 SELECT pg_temp.expect_rejection($q$INSERT INTO patients.idempotency_record
     (actor_kind,actor_subject,operation,target_resource,idempotency_key,request_hash,response_status,response_body)
     VALUES ('SERVICE','tests','register','/patients','40000000-0000-4000-8000-000000000099',
