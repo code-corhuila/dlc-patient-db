@@ -1,0 +1,2 @@
+DROP TRIGGER trg_idempotency_records_write ON patients.idempotency_records;
+DROP TRIGGER trg_idempotency_records_truncate ON patients.idempotency_records;

@@ -1,0 +1,15 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-alter-005
+      author: DanielPerez1822
+      labels: "HU-PAT-001,PAT-004,ddl,deactivation-operations,emergency-contacts,patient-audit,idempotency,outbox,inbox,query-indexes"
+      comment: "Closed deactivation reasonCode published in PatientDeactivated; immutable like the other operation facts."
+      changes:
+        - sqlFile:
+            path: 001_deactivation_reason_code.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/13_alter/001_deactivation_reason_code.rollback.sql
+            relativeToChangelogFile: true

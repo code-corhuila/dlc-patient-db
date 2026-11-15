@@ -1,0 +1,85 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-functions-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,PAT-001,ddl,functions"
+      comment: "Reject changes to the stable patient identifier."
+      changes:
+        - sqlFile:
+            path: 001_reject_patient_id_change.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/001_reject_patient_id_change.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-002
+      author: DanielPerez1822
+      labels: "HU-PAT-001,patient-audit,ddl,functions"
+      comment: "Stamp audit inserts at the server and reject destructive DML."
+      changes:
+        - sqlFile:
+            path: 002_protect_patient_audit.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/002_protect_patient_audit.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-003
+      author: DanielPerez1822
+      labels: "HU-PAT-001,idempotency,ddl,functions"
+      comment: "Keep original outcomes immutable and enforce the minimum retry retention."
+      changes:
+        - sqlFile:
+            path: 003_protect_idempotency_records.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/003_protect_idempotency_records.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-004
+      author: DanielPerez1822
+      labels: "HU-PAT-001,outbox,ddl,functions"
+      comment: "Keep event facts stable while recording publication outcomes."
+      changes:
+        - sqlFile:
+            path: 004_protect_outbox_events.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/004_protect_outbox_events.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-005
+      author: DanielPerez1822
+      labels: "inbox,ddl,functions"
+      comment: "Assignment inbox functions for durable consumer deduplication."
+      changes:
+        - sqlFile:
+            path: 005_protect_inbox_events.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/005_protect_inbox_events.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-functions-006
+      author: DanielPerez1822
+      labels: "deactivation-operations,ddl,functions"
+      comment: "Durable Patients deactivation intent and local outcome: functions."
+      changes:
+        - sqlFile:
+            path: 006_protect_deactivation_operations.sql
+            relativeToChangelogFile: true
+            splitStatements: false
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/07_functions/006_protect_deactivation_operations.rollback.sql
+            relativeToChangelogFile: true

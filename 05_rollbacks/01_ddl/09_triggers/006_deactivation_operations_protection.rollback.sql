@@ -1,0 +1,2 @@
+DROP TRIGGER trg_deactivation_operations_write ON patients.deactivation_operations;
+DROP TRIGGER trg_deactivation_operations_truncate ON patients.deactivation_operations;

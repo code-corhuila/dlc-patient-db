@@ -1,0 +1,22 @@
+services:
+  patients-db-migrate:
+    image: liquibase/liquibase:4.29.2
+    volumes:
+      - ../:/workspace:ro
+    entrypoint:
+      - liquibase
+      - --search-path=/workspace
+      - --changelog-file=changelog/changelog-master.yaml
+      - --url=jdbc:postgresql://${PG_HOST:?set PG_HOST}:${PG_PORT:?set PG_PORT}/${PG_DATABASE:?set PG_DATABASE}
+      - --database-changelog-table-name=databasechangelog_patients
+      - --database-changelog-lock-table-name=databasechangeloglock_patients
+    environment:
+      LIQUIBASE_COMMAND_USERNAME: ${PG_MIGRATION_USER:?set PG_MIGRATION_USER}
+      LIQUIBASE_COMMAND_PASSWORD: ${PG_MIGRATION_PASSWORD:?set PG_MIGRATION_PASSWORD}
+    command: [update]
+    networks: [platform]
+
+networks:
+  platform:
+    name: ${PG_NETWORK:?set PG_NETWORK}
+    external: true

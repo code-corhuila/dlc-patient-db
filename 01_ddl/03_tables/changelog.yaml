@@ -1,0 +1,92 @@
+databaseChangeLog:
+  - changeSet:
+      id: patients-ddl-tables-001
+      author: DanielPerez1822
+      labels: "HU-PAT-001,PAT-001,ddl,tables"
+      comment: "Administrative patient identity; IAM actor UUIDs are contractual references."
+      changes:
+        - sqlFile:
+            path: 001_create_patients.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/001_create_patients.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-002
+      author: DanielPerez1822
+      labels: "HU-PAT-001,emergency-contacts,ddl,tables"
+      comment: "Zero or more administrative emergency contacts per patient."
+      changes:
+        - sqlFile:
+            path: 002_create_emergency_contacts.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/002_create_emergency_contacts.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-003
+      author: DanielPerez1822
+      labels: "HU-PAT-001,patient-audit,ddl,tables"
+      comment: "Immutable administrative audit; metadata lists field names without copying profile values."
+      changes:
+        - sqlFile:
+            path: 003_create_patient_audit.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/003_create_patient_audit.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-004
+      author: DanielPerez1822
+      labels: "HU-PAT-001,idempotency,ddl,tables"
+      comment: "Completed request outcomes scoped to the authenticated principal, operation and target."
+      changes:
+        - sqlFile:
+            path: 004_create_idempotency_records.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/004_create_idempotency_records.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-005
+      author: DanielPerez1822
+      labels: "HU-PAT-001,outbox,ddl,tables"
+      comment: "Immutable patient event facts with mutable publication metadata."
+      changes:
+        - sqlFile:
+            path: 005_create_outbox_events.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/005_create_outbox_events.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-006
+      author: DanielPerez1822
+      labels: "inbox,ddl,tables"
+      comment: "Assignment inbox tables for durable consumer deduplication."
+      changes:
+        - sqlFile:
+            path: 006_create_inbox_events.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/006_create_inbox_events.rollback.sql
+            relativeToChangelogFile: true
+  - changeSet:
+      id: patients-ddl-tables-007
+      author: DanielPerez1822
+      labels: "deactivation-operations,ddl,tables"
+      comment: "Durable Patients deactivation intent and local outcome: tables."
+      changes:
+        - sqlFile:
+            path: 007_create_deactivation_operations.sql
+            relativeToChangelogFile: true
+      rollback:
+        - sqlFile:
+            path: ../../05_rollbacks/01_ddl/03_tables/007_create_deactivation_operations.rollback.sql
+            relativeToChangelogFile: true
